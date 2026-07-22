@@ -22,23 +22,34 @@ def from_instasupersave(url):
         data = {"url": url}
         r = requests.post(api, data=data, timeout=10).json()
         return r.get("url")
-    except Exception:
+    except:
         return None
 
-# ---------- Provider 2: saveig (پشتیبان) ----------
+# ---------- Provider 2: saveig ----------
 def from_saveig(url):
     try:
         api = "https://saveig.app/api/ajax"
         data = {"url": url}
         r = requests.post(api, data=data, timeout=10).json()
         return r.get("video")
-    except Exception:
+    except:
+        return None
+
+# ---------- Provider 3: snapinsta ----------
+def from_snapinsta(url):
+    try:
+        api = "https://snapinsta.app/api/ajax"
+        data = {"url": url}
+        r = requests.post(api, data=data, timeout=10).json()
+        return r.get("video")
+    except:
         return None
 
 # ---------- انتخاب بهترین لینک ----------
 PROVIDERS = [
-    from_instasupersave,  # اولویت اول
-    from_saveig,          # پشتیبان
+    from_instasupersave,
+    from_saveig,
+    from_snapinsta,
 ]
 
 def get_best_download_link(url):
@@ -53,11 +64,10 @@ def get_best_download_link(url):
 async def handle_message(update, context):
     text = update.message.text.strip()
 
-    # اگر کاربر /start فرستاد
     if text == "/start":
         await update.message.reply_text(
             "✨ سلام! من پل دانلود اینستاگرام هستم.\n"
-            "فقط لینک Reel یا پست رو برام بفرست، من برات لینک دانلود مستقیمش رو می‌فرستم 💛"
+            "لینک Reel یا پست رو بفرست، من لینک دانلود مستقیمش رو می‌دم 💛"
         )
         return
 
@@ -67,12 +77,12 @@ async def handle_message(update, context):
         await update.message.reply_text(
             "✨ لینک دانلود آماده شد!\n\n"
             f"🔗 {download_link}\n\n"
-            "اگر باز نشد، با مرورگر دیگه یا VPN امتحان کن 💛"
+            "اگر باز نشد، با VPN یا مرورگر دیگه امتحان کن 💛"
         )
     else:
         await update.message.reply_text(
             "🌙✨ اوه‌اوه… این لینک خیلی شیطونه!\n"
-            "هم instasupersave هم سایت پشتیبان نتونستن پیداش کنن…\n"
+            "سه تا سایت مختلف تست کردم، هیچ‌کدوم نتونستن بازش کنن…\n"
             "یه لینک دیگه بده، یا بعداً دوباره امتحان کنیم 💛"
         )
 
@@ -86,7 +96,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "✨ Instagram Download Bridge Bot — Pro Edition ✨"
+    return "✨ Instagram Download Bridge Bot — Ultra Pro Edition ✨"
 
 def run_flask():
     app_flask.run(host="0.0.0.0", port=10000)
