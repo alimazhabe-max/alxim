@@ -1,12 +1,17 @@
 import os
 import requests
+from flask import Flask, request
+from telegram import Update
 from telegram.ext import Application, MessageHandler, filters
-from flask import Flask
-import threading
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBHOOK_URL = "https://alxim-1.onrender.com/webhook"
 
-# --- Telegram bot ---
+app = Flask(__name__)
+
+# Telegram bot setup
+application = Application.builder().token(BOT_TOKEN).build()
+
 def download_instagram(url):
     api = f"https://api.dlydown.com/instagram?url={url}"
     r = requests.get(api).json()
@@ -20,24 +25,23 @@ async def handle_message(update, context):
     except:
         await update.message.reply_text("لینک اشتباه یا ویدیو پیدا نشد.")
 
-def run_bot():
-    bot_app = Application.builder().token(BOT_TOKEN).build()
-    bot_app.add_handler(MessageHandler(filters.TEXT, handle_message))
-    bot_app.run_polling()
+application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-# --- Flask server ---
-app_flask = Flask(__name__)
+# Webhook endpoint
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    application.update_queue.put(update)
+    return "ok"
 
-@app_flask.route("/")
+# Home page
+@app.route("/")
 def home():
     return "Bot is running!"
 
-def run_flask():
-    app_flask.run(host="0.0.0.0", port=10000)
-
 if __name__ == "__main__":
-    # Run Flask in a thread
-    threading.Thread(target=run_flask).start()
+    # Set webhook
+    application.bot.set_webhook(WEBHOOK_URL)
 
-    # Run bot in main thread
-    run_bot()
+    # Run Flask server
+    app.run(host="0.0.0.0", port=10000)
