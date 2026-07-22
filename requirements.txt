@@ -1,11 +1,3 @@
-# ربات تلگرام
 python-telegram-bot==21.4
-
-# وب‌سرور برای Railway
 Flask==3.0.3
-
-# دانلود async (جدید)
 aiohttp==3.10.10
-
-# برای سازگاری و fallback
-requests==2.32.3
