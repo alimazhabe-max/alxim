@@ -6,7 +6,6 @@ import threading
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# ---------- تمیز کردن لینک اینستاگرام ----------
 def clean_instagram_url(url):
     url = url.strip()
     if "?" in url:
@@ -15,14 +14,23 @@ def clean_instagram_url(url):
         url += "/"
     return url
 
-# ---------- Provider واقعی و پایدار ----------
-def from_instasupersave(url):
-    api = "https://instasupersave.com/api/convert"
+# -------- Provider جدید و قوی --------
+def from_saveig(url):
+    api = "https://saveig.app/api/ajax"
     data = {"url": url}
     r = requests.post(api, data=data, timeout=10).json()
-    return r.get("url")
+    return r.get("video")
 
-# ---------- Providerهای کمکی ----------
+# -------- Providerهای کمکی --------
+def from_instasupersave(url):
+    try:
+        api = "https://instasupersave.com/api/convert"
+        data = {"url": url}
+        r = requests.post(api, data=data, timeout=10).json()
+        return r.get("url")
+    except:
+        return None
+
 def from_dlydown(url):
     try:
         api = f"https://api.dlydown.com/instagram?url={url}"
@@ -31,20 +39,10 @@ def from_dlydown(url):
     except:
         return None
 
-def from_snapinsta(url):
-    try:
-        api = "https://snapinsta.app/api/ajax"
-        data = {"url": url}
-        r = requests.post(api, data=data, timeout=10).json()
-        return r.get("video")
-    except:
-        return None
-
-# ---------- لیست Providerها ----------
 PROVIDERS = [
-    from_instasupersave,   # بهترین و پایدارترین
+    from_saveig,          # قوی‌ترین
+    from_instasupersave,
     from_dlydown,
-    from_snapinsta,
 ]
 
 def get_best_video(url):
@@ -58,7 +56,6 @@ def get_best_video(url):
             continue
     return None
 
-# ---------- Telegram bot ----------
 async def handle_message(update, context):
     url = update.message.text.strip()
     video = get_best_video(url)
@@ -72,8 +69,7 @@ async def handle_message(update, context):
             )
     else:
         await update.message.reply_text(
-            "🌙✨ اوه‌اوه… انگار این لینک یه کم قهر کرده! "
-            "هرچی گشتم، هیچ‌کدوم از سایت‌ها نتونستن پیداش کنن… "
+            "🌙✨ اوه‌اوه… این لینک خیلی شیطونه! حتی قوی‌ترین سایت‌ها هم نتونستن بازش کنن… "
             "یه لینک دیگه بده ببینم چی می‌شه! 💛"
         )
 
@@ -82,7 +78,6 @@ def run_bot():
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.run_polling()
 
-# ---------- Flask server ----------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
