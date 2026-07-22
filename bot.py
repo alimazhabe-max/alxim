@@ -4,11 +4,12 @@ from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters
 import threading
+from bs4 import BeautifulSoup
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHANNEL_ID = "@hmhermi"  # کانال عضویت اجباری
+CHANNEL_ID = "@hmhermi"
 
-API_URL = "https://instagram-downloader-api.vercel.app/api/reel?url="
+INSTASUPER_API = "https://instasupersave.com/api/convert"
 
 # ---------- چک عضویت ----------
 async def is_member(user_id, bot):
@@ -33,6 +34,40 @@ def download_button(link):
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# ---------- استخراج لینک از HTML ----------
+def extract_from_html(html):
+    try:
+        soup = BeautifulSoup(html, "html.parser")
+        a = soup.find("a", href=True)
+        if a and a["href"].startswith("http"):
+            return a["href"]
+        return None
+    except:
+        return None
+
+# ---------- درخواست به instasupersave ----------
+def get_download_link(url):
+    try:
+        r = requests.post(INSTASUPER_API, data={"url": url}, timeout=10)
+
+        # JSON
+        try:
+            j = r.json()
+            if j.get("url"):
+                return j["url"]
+        except:
+            pass
+
+        # HTML fallback
+        return extract_from_html(r.text)
+
+    except:
+        return None
+
+# ---------- رفتار انسانی ----------
+async def human_reply(update, text):
+    await update.message.reply_text(f"✨ {text}")
+
 # ---------- هندل پیام‌ها ----------
 async def handle_message(update, context):
     user_id = update.message.from_user.id
@@ -40,28 +75,24 @@ async def handle_message(update, context):
 
     # چک عضویت
     if not await is_member(user_id, context.bot):
-        await update.message.reply_text(
-            "✨ برای استفاده از ربات، ابتدا باید عضو کانال شوید:",
-            reply_markup=join_buttons()
-        )
+        await human_reply(update, "برای استفاده از ربات، اول باید عضو کانال بشی 💛")
+        await update.message.reply_text("👇 لطفاً عضو شو:", reply_markup=join_buttons())
         return
 
-    # درخواست به API پایدار
-    try:
-        r = requests.get(API_URL + url, timeout=10).json()
-    except:
-        await update.message.reply_text("⚠️ اتصال به سرور مشکل پیدا کرد…")
-        return
+    # رفتار انسانی قبل از پردازش
+    await human_reply(update, "یه لحظه صبر کن… دارم لینک رو بررسی می‌کنم 🤔")
 
-    if r.get("url"):
+    link = get_download_link(url)
+
+    if link:
         await update.message.reply_text(
-            "✨ لینک دانلود آماده شد!",
-            reply_markup=download_button(r["url"])
+            "✨ لینک دانلود آماده شد!\n\n"
+            "اگه باز نشد، یه بار با VPN امتحان کن 💛",
+            reply_markup=download_button(link)
         )
     else:
-        await update.message.reply_text(
-            "🌙 سایت نتونست لینک رو بسازه… بعداً امتحان کنیم 💛"
-        )
+        await human_reply(update, "اوه… instasupersave امروز یه کم بداخلاقه 😅")
+        await human_reply(update, "یه لینک دیگه بده، دوباره تست می‌کنم 🌙")
 
 # ---------- هندل دکمه بررسی عضویت ----------
 async def handle_callback(update, context):
@@ -72,10 +103,11 @@ async def handle_callback(update, context):
 
     if query.data == "check_join":
         if await is_member(user_id, context.bot):
-            await query.edit_message_text("✨ عضویت تایید شد! حالا لینک رو دوباره بفرست 💛")
+            await query.edit_message_text("✨ عالیه! عضویت تایید شد. حالا لینک رو دوباره بفرست 💛")
         else:
             await query.edit_message_text(
-                "❌ هنوز عضو کانال نیستی!\n\nلطفاً عضو شو و دوباره روی «بررسی عضویت» بزن:",
+                "❌ هنوز عضو کانال نیستی!\n\n"
+                "لطفاً عضو شو و دوباره روی «بررسی عضویت» بزن:",
                 reply_markup=join_buttons()
             )
 
