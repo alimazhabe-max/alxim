@@ -27,12 +27,13 @@ def main_menu():
 def join_buttons():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 عضویت", url="https://t.me/hmhermi")],
-        [InlineKeyboardButton("🔄 بررسی", callback_data="check_join")]
+        [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_join")]
     ])
 
 async def handle_message(update, context):
     user_id = update.message.from_user.id
 
+    # چک عضویت
     if not await is_member(user_id, context.bot):
         await update.message.chat.send_message(
             "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛",
@@ -40,6 +41,7 @@ async def handle_message(update, context):
         )
         return
 
+    # فقط یک پیام با منو، بدون Reply
     await update.message.chat.send_message(
         "👇 منوی اصلی:",
         reply_markup=main_menu()
@@ -48,6 +50,7 @@ async def handle_message(update, context):
 async def handle_callback(update, context):
     q = update.callback_query
     await q.answer()
+
     user_id = q.from_user.id
 
     if q.data == "check_join":
