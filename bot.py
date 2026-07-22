@@ -1,12 +1,9 @@
-# ====================== ربات گزارش شبانه قم ======================
 import os
 import datetime
 import pytz
 import sqlite3
 import logging
-import threading
 import requests
-from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -15,7 +12,7 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-logger = logging.getLogger(name)
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEATHER_KEY = os.getenv("WEATHER_KEY")
@@ -59,7 +56,6 @@ def safe_request(url, params=None):
 
 # ====================== داده‌ها ======================
 def get_prayer_times_qom():
-    # روش Jafari (شیعه)
     data = safe_request(
         "https://api.aladhan.com/v1/timingsByCity",
         {"city": "Qom", "country": "Iran", "method": 14}
@@ -119,7 +115,8 @@ async def build_message():
     fajr, dhuhr, maghrib, isha = get_prayer_times_qom()
     temp, desc = get_weather_qom()
     dhikr = get_daily_dhikr()
- return (
+
+    return (
         "✨ گزارش شبانه قم ✨\n\n"
         f"📅 شمسی: {shamsi}\n"
         f"📆 قمری: {hijri}\n"
@@ -129,7 +126,6 @@ async def build_message():
         f"• ظهر: {dhuhr}\n"
         f"• مغرب: {maghrib}\n"
         f"• عشاء: {isha}\n\n"
-        f"🌙 نماز شب: پس از عشاء تا سحر\n\n"
         f"🌤 آب و هوا: {temp}°C - {desc}\n\n"
         f"💬 ذکر روز: {dhikr}\n\n"
         "اللهم عجل لولیک الفرج 💛"
@@ -138,7 +134,7 @@ async def build_message():
 # ====================== هندلرها ======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     add_subscriber(update.effective_chat.id)
-    await update.message.reply_text("✅ ثبت شد!\nهر شب ساعت ۱۲ گزارش برات ارسال می‌شه.")
+    await update.message.reply_text("ثبت شد! هر شب ساعت ۱۲ گزارش برات ارسال می‌شه.")
 
 async def test_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await build_message()
@@ -149,7 +145,6 @@ async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ از لیست دریافت گزارش حذف شدید.")
 
 async def nightly_job(context: ContextTypes.DEFAULT_TYPE):
-    logger.info("اجرای گزارش شبانه...")
     subs = get_subscribers()
     if not subs:
         return
@@ -160,22 +155,8 @@ async def nightly_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.warning(f"Failed to send to {chat_id}: {e}")
 
-# ====================== Flask ======================
-app_flask = Flask(name)
-
-@app_flask.route("/")
-def home():
-    return "✅ Nightly Shia Report Bot is running!"
-
-def run_flask():
-    app_flask.run(host="0.0.0.0", port=10000, debug=False)
-
 # ====================== اجرا ======================
 def main():
-    if not BOT_TOKEN:
-        logger.critical("BOT_TOKEN not set!")
-        return
-
     init_db()
 
     app = Application.builder().token(BOT_TOKEN).build()
@@ -184,15 +165,12 @@ def main():
     app.add_handler(CommandHandler("test", test_report))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
 
-    # اجرای روزانه ساعت ۰۰:۰۰ به وقت تهران
     app.job_queue.run_daily(
-        nightly_job, 
+        nightly_job,
         time=datetime.time(0, 0, tzinfo=tehran_tz)
     )
 
-    logger.info("ربات کاملاً فعال شد...")
     app.run_polling()
 
-if name == "main":
-    threading.Thread(target=run_flask, daemon=True).start()
+if __name__ == "__main__":
     main()
