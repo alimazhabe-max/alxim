@@ -1,11 +1,12 @@
 import os
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 import threading
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = "@hmhermi"
+BOT_USERNAME = "YOUR_BOT_USERNAME"  # بدون @
 
 async def is_member(user_id, bot):
     try:
@@ -14,104 +15,73 @@ async def is_member(user_id, bot):
     except:
         return False
 
-def main_menu():
+def menu_buttons():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇮🇷 ایرانی", callback_data="iran")],
-        [InlineKeyboardButton("🌍 خارجی", callback_data="world")],
-        [InlineKeyboardButton("⚡ سریع‌ترین", callback_data="fast")],
-        [InlineKeyboardButton("📘 استوری", callback_data="story")],
-        [InlineKeyboardButton("👤 پروفایل", callback_data="profile")],
-        [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")]
+        [InlineKeyboardButton("🇮🇷 ایرانی", url=f"tg://resolve?domain={BOT_USERNAME}&start=iran")],
+        [InlineKeyboardButton("🌍 خارجی", url=f"tg://resolve?domain={BOT_USERNAME}&start=world")],
+        [InlineKeyboardButton("⚡ سریع‌ترین", url=f"tg://resolve?domain={BOT_USERNAME}&start=fast")],
+        [InlineKeyboardButton("📘 استوری", url=f"tg://resolve?domain={BOT_USERNAME}&start=story")],
+        [InlineKeyboardButton("👤 پروفایل", url=f"tg://resolve?domain={BOT_USERNAME}&start=profile")],
+        [InlineKeyboardButton("ℹ️ راهنما", url=f"tg://resolve?domain={BOT_USERNAME}&start=help")]
     ])
 
-def join_buttons():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 عضویت", url="https://t.me/hmhermi")],
-        [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_join")]
-    ])
-
-async def handle_message(update, context):
+async def start(update, context):
     user_id = update.message.from_user.id
 
-    # چک عضویت
     if not await is_member(user_id, context.bot):
-        await update.message.chat.send_message(
-            "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛",
-            reply_markup=join_buttons()
+        await update.message.reply_text(
+            "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛\n\n"
+            "https://t.me/hmhermi\n\n"
+            "بعد از عضویت دستور /start را بزنید."
         )
         return
 
-    # پیام منو بدون Reply
-    await update.message.chat.send_message(
+    await update.message.reply_text(
         "👇 منوی اصلی:",
-        reply_markup=main_menu()
+        reply_markup=menu_buttons()
     )
 
-async def handle_callback(update, context):
-    q = update.callback_query
-    await q.answer()
+async def iran(update, context):
+    await update.message.reply_text(
+        "🇮🇷 ایرانی:\nfastdl.app\ninstadl.ir\nsavein.io/fa\nigdownloader.ir\ninstasave.ir\ninstadl.net"
+    )
 
-    user_id = q.from_user.id
+async def world(update, context):
+    await update.message.reply_text(
+        "🌍 خارجی:\nsnapinsta.app\nsaveig.app\nigram.io\ndownloadgram.org\ninstadownloader.co\ntoolzu.com\nsavefrom.net"
+    )
 
-    if q.data == "check_join":
-        if await is_member(user_id, context.bot):
-            await q.edit_message_text(
-                "🎉 فعال شد!\n👇 منوی اصلی:",
-                reply_markup=main_menu()
-            )
-        else:
-            await q.edit_message_text(
-                "❌ هنوز عضو نیستید!",
-                reply_markup=join_buttons()
-            )
-        return
+async def fast(update, context):
+    await update.message.reply_text(
+        "⚡ سریع‌ترین:\nfastdl.app\nsnapinsta.app\nsaveig.app\nigram.io"
+    )
 
-    if q.data == "iran":
-        await q.edit_message_text(
-            "🇮🇷 ایرانی:\nfastdl.app\ninstadl.ir\nsavein.io/fa\n\n👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
+async def story(update, context):
+    await update.message.reply_text(
+        "📘 استوری:\nstorysaver.net\nstoriesig.info\nanonyig.com"
+    )
 
-    if q.data == "world":
-        await q.edit_message_text(
-            "🌍 خارجی:\nsnapinsta.app\nsaveig.app\nigram.io\n\n👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
+async def profile(update, context):
+    await update.message.reply_text(
+        "👤 پروفایل:\ninstadp.io\nfullinstadp.com"
+    )
 
-    if q.data == "fast":
-        await q.edit_message_text(
-            "⚡ سریع‌ترین:\nfastdl.app\nsnapinsta.app\nsaveig.app\n\n👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    if q.data == "story":
-        await q.edit_message_text(
-            "📘 استوری:\nstorysaver.net\nstoriesig.info\n\n👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    if q.data == "profile":
-        await q.edit_message_text(
-            "👤 پروفایل:\ninstadp.io\nfullinstadp.com\n\n👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    if q.data == "help":
-        await q.edit_message_text(
-            "ℹ️ راهنما:\nلینک اینستاگرام را بفرست.\n👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
+async def help_cmd(update, context):
+    await update.message.reply_text(
+        "ℹ️ راهنما:\nلینک اینستاگرام را بفرست.\nبرای دانلود از سایت‌های معرفی‌شده استفاده کن."
+    )
 
 def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(MessageHandler(filters.TEXT, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_callback))
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("iran", iran))
+    app.add_handler(CommandHandler("world", world))
+    app.add_handler(CommandHandler("fast", fast))
+    app.add_handler(CommandHandler("story", story))
+    app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("help", help_cmd))
+
     app.run_polling()
 
 app_flask = Flask(__name__)
