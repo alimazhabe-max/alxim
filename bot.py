@@ -3,10 +3,10 @@ import datetime
 import pytz
 import requests
 import sqlite3
-from telegram.ext import Application, CommandHandler
+from telegram.ext import Updater, CommandHandler
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEATHER_KEY = os.getenv("WEATHER_KEY")  # کلید هواشناسی
+WEATHER_KEY = os.getenv("WEATHER_KEY")
 DB_PATH = "data.db"
 
 tehran_tz = pytz.timezone("Asia/Tehran")
@@ -42,7 +42,7 @@ def get_subscribers():
     return [r[0] for r in rows]
 
 
-# ---------- API ها ----------
+# ---------- API ----------
 def safe_request(url):
     try:
         return requests.get(url, timeout=10).json()
@@ -95,7 +95,6 @@ def get_shia_event(day, month):
     return events.get((day, month), "امروز روزی‌ست برای یاد اهل‌بیت علیهم‌السلام 💛")
 
 
-# ---------- پیام شبانه ----------
 def build_message():
     shamsi = get_shamsi_date()
     hijri = get_hijri_date()
@@ -126,15 +125,15 @@ def build_message():
 
 
 # ---------- /start ----------
-async def start(update, context):
+def start(update, context):
     add_subscriber(update.message.chat_id)
-    await update.message.reply_text(
+    update.message.reply_text(
         "از این به بعد هر شب ساعت ۱۲ شب گزارش کامل روز برات میاد 🌙✨"
     )
 
 
 # ---------- کار شبانه ----------
-async def nightly_job(context):
+def nightly_job(context):
     subs = get_subscribers()
     if not subs:
         return
@@ -143,7 +142,7 @@ async def nightly_job(context):
 
     for chat_id in subs:
         try:
-            await context.bot.send_message(chat_id, msg)
+            context.bot.send_message(chat_id, msg)
         except:
             pass
 
@@ -152,15 +151,20 @@ async def nightly_job(context):
 def main():
     init_db()
 
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-    app.job_queue.run_daily(
+    dp.add_handler(CommandHandler("start", start))
+
+    # Job Queue نسخه 13
+    jq = updater.job_queue
+    jq.run_daily(
         nightly_job,
         time=datetime.time(0, 0, tzinfo=tehran_tz)
     )
 
-    app.run_polling()
+    updater.start_polling()
+    updater.idle()
 
 
 if __name__ == "__main__":
