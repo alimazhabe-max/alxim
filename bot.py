@@ -6,6 +6,7 @@ import threading
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
+# ---------- تمیز کردن لینک ----------
 def clean_instagram_url(url):
     url = url.strip()
     if "?" in url:
@@ -14,63 +15,65 @@ def clean_instagram_url(url):
         url += "/"
     return url
 
-# -------- Provider جدید و قوی --------
-def from_saveig(url):
-    api = "https://saveig.app/api/ajax"
-    data = {"url": url}
-    r = requests.post(api, data=data, timeout=10).json()
-    return r.get("video")
-
-# -------- Providerهای کمکی --------
+# ---------- Provider 1: instasupersave ----------
 def from_instasupersave(url):
     try:
         api = "https://instasupersave.com/api/convert"
         data = {"url": url}
         r = requests.post(api, data=data, timeout=10).json()
         return r.get("url")
-    except:
+    except Exception:
         return None
 
-def from_dlydown(url):
+# ---------- Provider 2: saveig (پشتیبان) ----------
+def from_saveig(url):
     try:
-        api = f"https://api.dlydown.com/instagram?url={url}"
-        r = requests.get(api, timeout=10).json()
-        return r["result"][0]["url"]
-    except:
+        api = "https://saveig.app/api/ajax"
+        data = {"url": url}
+        r = requests.post(api, data=data, timeout=10).json()
+        return r.get("video")
+    except Exception:
         return None
 
+# ---------- انتخاب بهترین لینک ----------
 PROVIDERS = [
-    from_saveig,          # قوی‌ترین
-    from_instasupersave,
-    from_dlydown,
+    from_instasupersave,  # اولویت اول
+    from_saveig,          # پشتیبان
 ]
 
-def get_best_video(url):
+def get_best_download_link(url):
     url = clean_instagram_url(url)
     for provider in PROVIDERS:
-        try:
-            video = provider(url)
-            if video:
-                return video
-        except:
-            continue
+        link = provider(url)
+        if link:
+            return link
     return None
 
+# ---------- Telegram bot ----------
 async def handle_message(update, context):
-    url = update.message.text.strip()
-    video = get_best_video(url)
+    text = update.message.text.strip()
 
-    if video:
-        try:
-            await update.message.reply_video(video)
-        except:
-            await update.message.reply_text(
-                "✨ اوه نه! لینک رو پیدا کردم ولی موقع فرستادنش یه چیزی قاطی کرد! دوباره امتحان کنیم؟ 💛"
-            )
+    # اگر کاربر /start فرستاد
+    if text == "/start":
+        await update.message.reply_text(
+            "✨ سلام! من پل دانلود اینستاگرام هستم.\n"
+            "فقط لینک Reel یا پست رو برام بفرست، من برات لینک دانلود مستقیمش رو می‌فرستم 💛"
+        )
+        return
+
+    download_link = get_best_download_link(text)
+
+    if download_link:
+        await update.message.reply_text(
+            "✨ لینک دانلود آماده شد!\n\n"
+            f"🔗 {download_link}\n\n"
+            "اگر باز نشد، با مرورگر دیگه یا VPN امتحان کن 💛"
+        )
     else:
         await update.message.reply_text(
-            "🌙✨ اوه‌اوه… این لینک خیلی شیطونه! حتی قوی‌ترین سایت‌ها هم نتونستن بازش کنن… "
-            "یه لینک دیگه بده ببینم چی می‌شه! 💛"
+            "🌙✨ اوه‌اوه… این لینک خیلی شیطونه!\n"
+            "هم instasupersave هم سایت پشتیبان نتونستن پیداش کنن…\n"
+            "یه لینک دیگه بده، یا بعداً دوباره امتحان کنیم 💛"
         )
 
 def run_bot():
@@ -78,11 +81,12 @@ def run_bot():
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.run_polling()
 
+# ---------- Flask server ----------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "✨ Instagram Download Bridge Bot on Railway ✨"
+    return "✨ Instagram Download Bridge Bot — Pro Edition ✨"
 
 def run_flask():
     app_flask.run(host="0.0.0.0", port=10000)
