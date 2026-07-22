@@ -1,30 +1,22 @@
-import asyncio
-import logging
-from aiogram import Bot, Dispatcher, Router, F
-from aiogram.types import Message
-from aiogram.enums import ParseMode
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import requests
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-router = Router()
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 ربات تست فعال شد!\nلینک بفرست.")
 
-@router.message(F.text == "/start")
-async def start(message: Message):
-    await message.answer("👋 ربات تست فعال شد!\nلینک اینستاگرام بفرست.", parse_mode=ParseMode.HTML)
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("در حال توسعه...")
 
-@router.message(F.text)
-async def echo(message: Message):
-    await message.answer("ربات در حال توسعه است...")
-
-async def main():
-    bot = Bot(token=TOKEN)
-    dp = Dispatcher()
-    dp.include_router(router)
-    await dp.start_polling(bot)
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
