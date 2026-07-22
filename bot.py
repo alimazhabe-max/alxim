@@ -19,7 +19,9 @@ async def is_member(user_id, bot):
 # ---------- منوی اصلی ----------
 def main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📄 لیست سایت‌های دانلود اینستاگرام", callback_data="sites")],
+        [InlineKeyboardButton("🇮🇷 سایت‌های ایرانی", callback_data="iran")],
+        [InlineKeyboardButton("🌍 سایت‌های خارجی", callback_data="world")],
+        [InlineKeyboardButton("⚡ سریع‌ترین‌ها", callback_data="fast")],
         [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")]
     ])
 
@@ -50,10 +52,10 @@ async def handle_message(update, context):
         await update.message.reply_text("👇 لطفاً عضو شوید:", reply_markup=join_buttons())
         return
 
-    # ساعت‌شنی هنگام جستجو
+    # ساعت‌شنی هنگام بررسی
     await human(update, "⏳ در حال بررسی لینک…")
 
-    # چون گفتی لینک دانلود نمی‌خوای، فقط پیام می‌ده
+    # چون لینک دانلود نمی‌خوای، فقط پیام می‌ده
     await human(update, "✨ لینک شما بررسی شد!\n\nبرای دانلود، از لیست سایت‌ها استفاده کنید 💛")
 
 # ---------- هندل دکمه‌ها ----------
@@ -76,18 +78,24 @@ async def handle_callback(update, context):
                 reply_markup=join_buttons()
             )
 
-    # لیست سایت‌ها
-    if q.data == "sites":
+    # سایت‌های ایرانی
+    if q.data == "iran":
         await q.edit_message_text(
-            "📄 **بهترین سایت‌های دانلود اینستاگرام:**\n\n"
-            "🇮🇷 ایرانی:\n"
+            "🇮🇷 **سایت‌های ایرانی دانلود اینستاگرام:**\n\n"
             "• fastdl.app\n"
             "• instadl.ir\n"
             "• savein.io/fa\n"
             "• igdownloader.ir\n"
             "• instasave.ir\n"
             "• instadl.net\n\n"
-            "🌍 خارجی:\n"
+            "👇 منوی اصلی:",
+            reply_markup=main_menu()
+        )
+
+    # سایت‌های خارجی
+    if q.data == "world":
+        await q.edit_message_text(
+            "🌍 **سایت‌های خارجی دانلود اینستاگرام:**\n\n"
             "• snapinsta.app\n"
             "• saveig.app\n"
             "• igram.io\n"
@@ -95,6 +103,18 @@ async def handle_callback(update, context):
             "• instadownloader.co\n"
             "• toolzu.com\n"
             "• savefrom.net\n\n"
+            "👇 منوی اصلی:",
+            reply_markup=main_menu()
+        )
+
+    # سریع‌ترین‌ها
+    if q.data == "fast":
+        await q.edit_message_text(
+            "⚡ **سریع‌ترین سایت‌های دانلود اینستاگرام:**\n\n"
+            "• fastdl.app\n"
+            "• snapinsta.app\n"
+            "• saveig.app\n"
+            "• igram.io\n\n"
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
