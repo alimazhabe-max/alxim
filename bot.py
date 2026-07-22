@@ -41,7 +41,7 @@ async def handle_message(update, context):
         )
         return
 
-    # فقط یک پیام با منو، بدون Reply
+    # پیام منو بدون Reply
     await update.message.chat.send_message(
         "👇 منوی اصلی:",
         reply_markup=main_menu()
