@@ -8,7 +8,7 @@ import threading
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # ---------- تمیز کردن لینک ----------
-def clean_instagram_url(url):
+def clean_url(url):
     url = url.strip()
     if "?" in url:
         url = url.split("?")[0]
@@ -16,80 +16,138 @@ def clean_instagram_url(url):
         url += "/"
     return url
 
-# ---------- Scraper 1: instasupersave ----------
-def scrape_instasupersave(url):
+# ---------- ابزار استخراج لینک از HTML ----------
+def extract_from_html(html):
     try:
-        api = "https://instasupersave.com/api/convert"
-        data = {"url": url}
-        r = requests.post(api, data=data, timeout=10)
+        soup = BeautifulSoup(html, "html.parser")
 
-        # JSON
-        try:
-            j = r.json()
-            if "url" in j and j["url"]:
-                return j["url"]
-        except:
-            pass
-
-        # HTML fallback
-        soup = BeautifulSoup(r.text, "html.parser")
+        # 1) لینک داخل <a>
         a = soup.find("a", href=True)
         if a:
             return a["href"]
 
+        # 2) لینک داخل meta
+        meta = soup.find("meta", property="og:video")
+        if meta and meta.get("content"):
+            return meta["content"]
+
+        # 3) لینک داخل script
+        for script in soup.find_all("script"):
+            if script.string and "https" in script.string:
+                parts = script.string.split('"')
+                for p in parts:
+                    if p.startswith("https") and ".mp4" in p:
+                        return p
+
         return None
+    except:
+        return None
+
+# ---------- Scraper 1: instasupersave ----------
+def scraper_instasupersave(url):
+    try:
+        r = requests.post("https://instasupersave.com/api/convert",
+                          data={"url": url}, timeout=10)
+
+        # JSON
+        try:
+            j = r.json()
+            if isinstance(j, dict) and j.get("url"):
+                return j["url"]
+        except:
+            pass
+
+        # HTML
+        return extract_from_html(r.text)
     except:
         return None
 
 # ---------- Scraper 2: saveig ----------
-def scrape_saveig(url):
+def scraper_saveig(url):
     try:
-        api = "https://saveig.app/api/ajax"
-        data = {"url": url}
-        r = requests.post(api, data=data, timeout=10)
+        r = requests.post("https://saveig.app/api/ajax",
+                          data={"url": url}, timeout=10)
 
         try:
             j = r.json()
-            if "video" in j and j["video"]:
+            if isinstance(j, dict) and j.get("video"):
                 return j["video"]
         except:
             pass
 
-        return None
+        return extract_from_html(r.text)
     except:
         return None
 
 # ---------- Scraper 3: snapinsta ----------
-def scrape_snapinsta(url):
+def scraper_snapinsta(url):
     try:
-        api = "https://snapinsta.app/api/ajax"
-        data = {"url": url}
-        r = requests.post(api, data=data, timeout=10)
+        r = requests.post("https://snapinsta.app/api/ajax",
+                          data={"url": url}, timeout=10)
 
         try:
             j = r.json()
-            if "video" in j and j["video"]:
+            if isinstance(j, dict) and j.get("video"):
                 return j["video"]
         except:
             pass
 
-        return None
+        return extract_from_html(r.text)
     except:
         return None
 
-# ---------- انتخاب بهترین لینک ----------
+# ---------- Scraper 4: igdownloader ----------
+def scraper_igdownloader(url):
+    try:
+        r = requests.post("https://igdownloader.com/ajax",
+                          data={"link": url}, timeout=10)
+
+        try:
+            j = r.json()
+            if isinstance(j, dict) and j.get("download_url"):
+                return j["download_url"]
+        except:
+            pass
+
+        return extract_from_html(r.text)
+    except:
+        return None
+
+# ---------- Scraper 5: toolzu ----------
+def scraper_toolzu(url):
+    try:
+        r = requests.post("https://toolzu.com/api/ajax",
+                          data={"url": url}, timeout=10)
+
+        try:
+            j = r.json()
+            if isinstance(j, dict) and j.get("video"):
+                return j["video"]
+        except:
+            pass
+
+        return extract_from_html(r.text)
+    except:
+        return None
+
+# ---------- لیست Scraperها ----------
 SCRAPERS = [
-    scrape_instasupersave,
-    scrape_saveig,
-    scrape_snapinsta,
+    scraper_instasupersave,
+    scraper_saveig,
+    scraper_snapinsta,
+    scraper_igdownloader,
+    scraper_toolzu
 ]
 
-def get_best_download_link(url):
-    url = clean_instagram_url(url)
+def get_download_link(url):
+    url = clean_url(url)
     for scraper in SCRAPERS:
-        link = scraper(url)
-        if link:
-            return link
+        try:
+            link = scraper(url)
+            if link:
+                return link
+        except:
+            continue
     return None
 
 # ---------- Telegram bot ----------
@@ -98,25 +156,21 @@ async def handle_message(update, context):
 
     if text == "/start":
         await update.message.reply_text(
-            "✨ سلام! من نسخهٔ Ultra‑Scraper هستم.\n"
-            "لینک Reel رو بده، من از ۳ سایت مختلف Scrape می‌کنم "
-            "و لینک دانلود مستقیمش رو برات میارم 💛"
+            "✨ سلام! من نسخهٔ GOD‑SCRAPER هستم.\n"
+            "از ۵ سایت مختلف Scrape می‌کنم و لینک دانلود Reel رو برات میارم 💛"
         )
         return
 
-    url = clean_instagram_url(text)
-    download_link = get_best_download_link(url)
+    link = get_download_link(text)
 
-    if download_link:
+    if link:
         await update.message.reply_text(
-            "✨ لینک دانلود آماده شد!\n\n"
-            f"🔗 {download_link}\n\n"
-            "اگر باز نشد، با VPN امتحان کن 💛"
+            f"✨ لینک دانلود آماده شد!\n\n🔗 {link}\n\nبا خیال راحت دانلود کن 💛"
         )
     else:
         await update.message.reply_text(
-            "🌙✨ اوه‌اوه… این لینک واقعاً شیطونه!\n"
-            "از ۳ سایت مختلف تست کردم، هیچ‌کدوم نتونستن بازش کنن…\n"
+            "🌙✨ اوه‌اوه… این لینک واقعاً از خدایان اینستاگرام کمک گرفته!\n"
+            "۵ تا سایت مختلف تست کردم، هیچ‌کدوم نتونستن بازش کنن…\n"
             "یه لینک دیگه بده، یا بعداً دوباره امتحان کنیم 💛"
         )
 
@@ -130,7 +184,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "✨ Instagram Downloader Bot — Ultra‑Scraper Edition ✨"
+    return "✨ Instagram Downloader Bot — GOD‑SCRAPER Edition ✨"
 
 def run_flask():
     app_flask.run(host="0.0.0.0", port=10000)
