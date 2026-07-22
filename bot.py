@@ -1,11 +1,18 @@
+# ====================== ربات گزارش شبانه قم ======================
 import os
 import datetime
 import pytz
 import sqlite3
 import logging
+import threading
 import requests
+from flask import Flask
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+)
 
 # ====================== تنظیمات ======================
 logging.basicConfig(
@@ -155,6 +162,16 @@ async def nightly_job(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.warning(f"Failed to send to {chat_id}: {e}")
 
+# ====================== Flask ======================
+app_flask = Flask(__name__)
+
+@app_flask.route("/")
+def home():
+    return "Nightly Shia Report Bot is running!"
+
+def run_flask():
+    app_flask.run(host="0.0.0.0", port=10000)
+
 # ====================== اجرا ======================
 def main():
     init_db()
@@ -169,6 +186,8 @@ def main():
         nightly_job,
         time=datetime.time(0, 0, tzinfo=tehran_tz)
     )
+
+    threading.Thread(target=run_flask, daemon=True).start()
 
     app.run_polling()
 
