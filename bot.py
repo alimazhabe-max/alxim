@@ -1,5 +1,6 @@
 import os
 import requests
+from bs4 import BeautifulSoup
 from flask import Flask
 from telegram.ext import Application, MessageHandler, filters
 import threading
@@ -15,50 +16,23 @@ def clean_instagram_url(url):
         url += "/"
     return url
 
-# ---------- Provider 1: instasupersave ----------
-def from_instasupersave(url):
+# ---------- Scraper instasupersave ----------
+def scrape_instasupersave(url):
     try:
-        api = "https://instasupersave.com/api/convert"
+        session = requests.Session()
+
+        # مرحله ۱: صفحه اصلی را بگیریم
+        main_page = session.get("https://instasupersave.com/", timeout=10)
+
+        # مرحله ۲: درخواست سرچ را بفرستیم
         data = {"url": url}
-        r = requests.post(api, data=data, timeout=10).json()
-        return r.get("url")
-    except:
+        result_page = session.post("https://instasupersave.com/api/convert", data=data, timeout=10).json()
+
+        # مرحله ۳: لینک دانلود را از JSON بگیریم
+        return result_page.get("url")
+
+    except Exception:
         return None
-
-# ---------- Provider 2: saveig ----------
-def from_saveig(url):
-    try:
-        api = "https://saveig.app/api/ajax"
-        data = {"url": url}
-        r = requests.post(api, data=data, timeout=10).json()
-        return r.get("video")
-    except:
-        return None
-
-# ---------- Provider 3: snapinsta ----------
-def from_snapinsta(url):
-    try:
-        api = "https://snapinsta.app/api/ajax"
-        data = {"url": url}
-        r = requests.post(api, data=data, timeout=10).json()
-        return r.get("video")
-    except:
-        return None
-
-# ---------- انتخاب بهترین لینک ----------
-PROVIDERS = [
-    from_instasupersave,
-    from_saveig,
-    from_snapinsta,
-]
-
-def get_best_download_link(url):
-    url = clean_instagram_url(url)
-    for provider in PROVIDERS:
-        link = provider(url)
-        if link:
-            return link
-    return None
 
 # ---------- Telegram bot ----------
 async def handle_message(update, context):
@@ -66,24 +40,24 @@ async def handle_message(update, context):
 
     if text == "/start":
         await update.message.reply_text(
-            "✨ سلام! من پل دانلود اینستاگرام هستم.\n"
-            "لینک Reel یا پست رو بفرست، من لینک دانلود مستقیمش رو می‌دم 💛"
+            "✨ سلام! لینک اینستاگرام رو بده، من می‌رم داخل سایت instasupersave، "
+            "لینک رو اونجا Paste می‌کنم، سرچ می‌کنم و لینک دانلود مستقیمش رو برات میارم 💛"
         )
         return
 
-    download_link = get_best_download_link(text)
+    url = clean_instagram_url(text)
+    download_link = scrape_instasupersave(url)
 
     if download_link:
         await update.message.reply_text(
             "✨ لینک دانلود آماده شد!\n\n"
             f"🔗 {download_link}\n\n"
-            "اگر باز نشد، با VPN یا مرورگر دیگه امتحان کن 💛"
+            "اگر باز نشد، با VPN امتحان کن 💛"
         )
     else:
         await update.message.reply_text(
             "🌙✨ اوه‌اوه… این لینک خیلی شیطونه!\n"
-            "سه تا سایت مختلف تست کردم، هیچ‌کدوم نتونستن بازش کنن…\n"
-            "یه لینک دیگه بده، یا بعداً دوباره امتحان کنیم 💛"
+            "رفتم داخل سایت، لینک رو Paste کردم، سرچ کردم… ولی سایت نتونست دانلود بسازه 💛"
         )
 
 def run_bot():
@@ -96,7 +70,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "✨ Instagram Download Bridge Bot — Ultra Pro Edition ✨"
+    return "✨ Instagram Downloader Bot — Scraper Edition ✨"
 
 def run_flask():
     app_flask.run(host="0.0.0.0", port=10000)
