@@ -8,8 +8,6 @@ import threading
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = "@hmhermi"
 
-FASTDL_API = "https://fastdl.app/fa2/video"
-
 # ---------- چک عضویت ----------
 async def is_member(user_id, bot):
     try:
@@ -21,7 +19,7 @@ async def is_member(user_id, bot):
 # ---------- منوی اصلی ----------
 def main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬇️ دانلود ویدیو", callback_data="download")],
+        [InlineKeyboardButton("📄 لیست سایت‌های دانلود اینستاگرام", callback_data="sites")],
         [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")]
     ])
 
@@ -31,23 +29,6 @@ def join_buttons():
         [InlineKeyboardButton("📢 عضویت در کانال", url="https://t.me/hmhermi")],
         [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_join")]
     ])
-
-# ---------- دکمه دانلود ----------
-def download_button(link):
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("⬇️ دانلود مستقیم", url=link)]
-    ])
-
-# ---------- API fastdl ----------
-def get_fastdl(url):
-    try:
-        r = requests.post(FASTDL_API, data={"url": url}, timeout=10)
-        j = r.json()
-        if j.get("url"):
-            return j["url"]
-        return None
-    except:
-        return None
 
 # ---------- پیام انسانی ----------
 async def human(update, text):
@@ -70,17 +51,10 @@ async def handle_message(update, context):
         return
 
     # ساعت‌شنی هنگام جستجو
-    await human(update, "⏳ در حال جستجو… لطفاً صبر کنید")
+    await human(update, "⏳ در حال بررسی لینک…")
 
-    link = get_fastdl(text)
-
-    if link:
-        await update.message.reply_text(
-            "✨ لینک دانلود آماده شد!",
-            reply_markup=download_button(link)
-        )
-    else:
-        await human(update, "😔 امروز یکم سخت می‌گیره… دوباره امتحان کن")
+    # چون گفتی لینک دانلود نمی‌خوای، فقط پیام می‌ده
+    await human(update, "✨ لینک شما بررسی شد!\n\nبرای دانلود، از لیست سایت‌ها استفاده کنید 💛")
 
 # ---------- هندل دکمه‌ها ----------
 async def handle_callback(update, context):
@@ -102,16 +76,36 @@ async def handle_callback(update, context):
                 reply_markup=join_buttons()
             )
 
-    # منوی اصلی
-    if q.data == "download":
-        await q.edit_message_text("لینک اینستاگرام را ارسال کنید تا دانلود کنم 💛")
+    # لیست سایت‌ها
+    if q.data == "sites":
+        await q.edit_message_text(
+            "📄 **بهترین سایت‌های دانلود اینستاگرام:**\n\n"
+            "🇮🇷 ایرانی:\n"
+            "• fastdl.app\n"
+            "• instadl.ir\n"
+            "• savein.io/fa\n"
+            "• igdownloader.ir\n"
+            "• instasave.ir\n"
+            "• instadl.net\n\n"
+            "🌍 خارجی:\n"
+            "• snapinsta.app\n"
+            "• saveig.app\n"
+            "• igram.io\n"
+            "• downloadgram.org\n"
+            "• instadownloader.co\n"
+            "• toolzu.com\n"
+            "• savefrom.net\n\n"
+            "👇 منوی اصلی:",
+            reply_markup=main_menu()
+        )
 
+    # راهنما
     if q.data == "help":
         await q.edit_message_text(
             "📘 راهنما:\n\n"
             "1️⃣ لینک اینستاگرام را بفرست\n"
-            "2️⃣ ربات لینک دانلود مستقیم می‌دهد\n"
-            "3️⃣ کاملاً رایگان و نامحدود\n\n"
+            "2️⃣ ربات بررسی می‌کند\n"
+            "3️⃣ برای دانلود، از لیست سایت‌ها استفاده کن\n\n"
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
