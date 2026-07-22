@@ -7,11 +7,7 @@ import threading
 import requests
 from flask import Flask
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-)
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 # ====================== تنظیمات ======================
 logging.basicConfig(
