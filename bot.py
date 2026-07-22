@@ -65,7 +65,7 @@ def get_download_link(url):
         return None
 
 # ---------- رفتار انسانی ----------
-async def human_reply(update, text):
+async def human(update, text):
     await update.message.reply_text(f"✨ {text}")
 
 # ---------- هندل پیام‌ها ----------
@@ -75,12 +75,12 @@ async def handle_message(update, context):
 
     # چک عضویت
     if not await is_member(user_id, context.bot):
-        await human_reply(update, "برای استفاده از ربات، اول باید عضو کانال بشی 💛")
+        await human(update, "برای استفاده از ربات، اول باید عضو کانال بشی 💛")
         await update.message.reply_text("👇 لطفاً عضو شو:", reply_markup=join_buttons())
         return
 
     # رفتار انسانی قبل از پردازش
-    await human_reply(update, "یه لحظه صبر کن… دارم لینک رو بررسی می‌کنم 🤔")
+    await human(update, "یه لحظه صبر کن… دارم لینک رو بررسی می‌کنم 🤔")
 
     link = get_download_link(url)
 
@@ -91,8 +91,8 @@ async def handle_message(update, context):
             reply_markup=download_button(link)
         )
     else:
-        await human_reply(update, "اوه… instasupersave امروز یه کم بداخلاقه 😅")
-        await human_reply(update, "یه لینک دیگه بده، دوباره تست می‌کنم 🌙")
+        await human(update, "اوه… instasupersave امروز یه کم بداخلاقه 😅")
+        await human(update, "یه لینک دیگه بده، دوباره تست می‌کنم 🌙")
 
 # ---------- هندل دکمه بررسی عضویت ----------
 async def handle_callback(update, context):
