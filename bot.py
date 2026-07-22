@@ -21,15 +21,28 @@ def scrape_instasupersave(url):
     try:
         session = requests.Session()
 
-        # مرحله ۱: صفحه اصلی را بگیریم
-        main_page = session.get("https://instasupersave.com/", timeout=10)
-
-        # مرحله ۲: درخواست سرچ را بفرستیم
+        # مرحله ۱: درخواست API
+        api = "https://instasupersave.com/api/convert"
         data = {"url": url}
-        result_page = session.post("https://instasupersave.com/api/convert", data=data, timeout=10).json()
 
-        # مرحله ۳: لینک دانلود را از JSON بگیریم
-        return result_page.get("url")
+        response = session.post(api, data=data, timeout=10)
+
+        # اگر JSON بود
+        try:
+            j = response.json()
+            if "url" in j and j["url"]:
+                return j["url"]
+        except:
+            pass
+
+        # اگر JSON نبود → HTML Parse
+        soup = BeautifulSoup(response.text, "html.parser")
+        link_tag = soup.find("a", href=True)
+
+        if link_tag:
+            return link_tag["href"]
+
+        return None
 
     except Exception:
         return None
@@ -40,8 +53,8 @@ async def handle_message(update, context):
 
     if text == "/start":
         await update.message.reply_text(
-            "✨ سلام! لینک اینستاگرام رو بده، من می‌رم داخل سایت instasupersave، "
-            "لینک رو اونجا Paste می‌کنم، سرچ می‌کنم و لینک دانلود مستقیمش رو برات میارم 💛"
+            "✨ سلام! لینک اینستاگرام رو بده، من می‌رم داخل instasupersave "
+            "و لینک دانلود مستقیمش رو برات میارم 💛"
         )
         return
 
@@ -70,7 +83,7 @@ app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "✨ Instagram Downloader Bot — Scraper Edition ✨"
+    return "✨ Instagram Downloader Bot — Stable Scraper Edition ✨"
 
 def run_flask():
     app_flask.run(host="0.0.0.0", port=10000)
