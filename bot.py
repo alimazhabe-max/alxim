@@ -18,12 +18,12 @@ async def is_member(user_id, bot):
 # ---------- دکمه‌های شیشه‌ای که دستور اجرا می‌کنند ----------
 def menu_buttons():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇮🇷 ایرانی", url=f"tg://resolve?domain={BOT_USERNAME}&start=iran")],
-        [InlineKeyboardButton("🌍 خارجی", url=f"tg://resolve?domain={BOT_USERNAME}&start=world")],
-        [InlineKeyboardButton("⚡ سریع‌ترین", url=f"tg://resolve?domain={BOT_USERNAME}&start=fast")],
-        [InlineKeyboardButton("📘 استوری", url=f"tg://resolve?domain={BOT_USERNAME}&start=story")],
-        [InlineKeyboardButton("👤 پروفایل", url=f"tg://resolve?domain={BOT_USERNAME}&start=profile")],
-        [InlineKeyboardButton("ℹ️ راهنما", url=f"tg://resolve?domain={BOT_USERNAME}&start=help")]
+        [InlineKeyboardButton("🇮🇷 ایرانی", url=f"https://t.me/{BOT_USERNAME}?start=iran")],
+        [InlineKeyboardButton("🌍 خارجی", url=f"https://t.me/{BOT_USERNAME}?start=world")],
+        [InlineKeyboardButton("⚡ سریع‌ترین", url=f"https://t.me/{BOT_USERNAME}?start=fast")],
+        [InlineKeyboardButton("📘 استوری", url=f"https://t.me/{BOT_USERNAME}?start=story")],
+        [InlineKeyboardButton("👤 پروفایل", url=f"https://t.me/{BOT_USERNAME}?start=profile")],
+        [InlineKeyboardButton("ℹ️ راهنما", url=f"https://t.me/{BOT_USERNAME}?start=help")]
     ])
 
 # ---------- /start ----------
