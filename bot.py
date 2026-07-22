@@ -1,4 +1,3 @@
-# ====================== ربات گزارش شبانه قم ======================
 import os
 import datetime
 import pytz
@@ -182,6 +181,7 @@ def main():
     app.add_handler(CommandHandler("test", test_report))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
 
+    # JobQueue نسخهٔ 21.4 فعال است
     app.job_queue.run_daily(
         nightly_job,
         time=datetime.time(0, 0, tzinfo=tehran_tz)
