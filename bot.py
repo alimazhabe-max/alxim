@@ -1,5 +1,4 @@
 import os
-import requests
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters
@@ -22,6 +21,8 @@ def main_menu():
         [InlineKeyboardButton("🇮🇷 سایت‌های ایرانی", callback_data="iran")],
         [InlineKeyboardButton("🌍 سایت‌های خارجی", callback_data="world")],
         [InlineKeyboardButton("⚡ سریع‌ترین‌ها", callback_data="fast")],
+        [InlineKeyboardButton("📘 استوری و هایلایت", callback_data="story")],
+        [InlineKeyboardButton("👤 عکس پروفایل", callback_data="profile")],
         [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")]
     ])
 
@@ -32,9 +33,9 @@ def join_buttons():
         [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_join")]
     ])
 
-# ---------- پیام انسانی ----------
+# ---------- پیام ساده ----------
 async def human(update, text):
-    await update.message.reply_text(f"{text}")
+    await update.message.reply_text(text)
 
 # ---------- هندل پیام‌ها ----------
 async def handle_message(update, context):
@@ -52,11 +53,9 @@ async def handle_message(update, context):
         await update.message.reply_text("👇 لطفاً عضو شوید:", reply_markup=join_buttons())
         return
 
-    # ساعت‌شنی هنگام بررسی
+    # حس جستجو با ساعت‌شنی
     await human(update, "⏳ در حال بررسی لینک…")
-
-    # چون لینک دانلود نمی‌خوای، فقط پیام می‌ده
-    await human(update, "✨ لینک شما بررسی شد!\n\nبرای دانلود، از لیست سایت‌ها استفاده کنید 💛")
+    await human(update, "✨ لینک شما بررسی شد!\n\nبرای دانلود، از سایت‌های پیشنهادی در منوی اصلی استفاده کنید 💛")
 
 # ---------- هندل دکمه‌ها ----------
 async def handle_callback(update, context):
@@ -68,7 +67,7 @@ async def handle_callback(update, context):
     if q.data == "check_join":
         if await is_member(user_id, context.bot):
             await q.edit_message_text(
-                "🎉 تبریک! ربات برای شما **رایگان و نامحدود** فعال شد.\n\n"
+                "🎉 تبریک! ربات برای شما **به صورت رایگان و نامحدود** فعال شد.\n\n"
                 "👇 منوی اصلی:",
                 reply_markup=main_menu()
             )
@@ -77,6 +76,7 @@ async def handle_callback(update, context):
                 "❌ هنوز عضو کانال نیستید!\n👇 لطفاً عضو شوید:",
                 reply_markup=join_buttons()
             )
+        return
 
     # سایت‌های ایرانی
     if q.data == "iran":
@@ -91,6 +91,7 @@ async def handle_callback(update, context):
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
+        return
 
     # سایت‌های خارجی
     if q.data == "world":
@@ -106,6 +107,7 @@ async def handle_callback(update, context):
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
+        return
 
     # سریع‌ترین‌ها
     if q.data == "fast":
@@ -118,17 +120,43 @@ async def handle_callback(update, context):
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
+        return
+
+    # استوری و هایلایت
+    if q.data == "story":
+        await q.edit_message_text(
+            "📘 **استوری و هایلایت (مشاهده و دانلود):**\n\n"
+            "• storiesig.info\n"
+            "• storysaver.net\n"
+            "• anonyig.com\n\n"
+            "👇 منوی اصلی:",
+            reply_markup=main_menu()
+        )
+        return
+
+    # عکس پروفایل
+    if q.data == "profile":
+        await q.edit_message_text(
+            "👤 **دانلود عکس پروفایل اینستاگرام:**\n\n"
+            "• instadp.io\n"
+            "• fullinstadp.com\n\n"
+            "👇 منوی اصلی:",
+            reply_markup=main_menu()
+        )
+        return
 
     # راهنما
     if q.data == "help":
         await q.edit_message_text(
-            "📘 راهنما:\n\n"
-            "1️⃣ لینک اینستاگرام را بفرست\n"
-            "2️⃣ ربات بررسی می‌کند\n"
-            "3️⃣ برای دانلود، از لیست سایت‌ها استفاده کن\n\n"
+            "ℹ️ **راهنما:**\n\n"
+            "1️⃣ لینک اینستاگرام را ارسال کنید.\n"
+            "2️⃣ ربات لینک را بررسی می‌کند (⏳).\n"
+            "3️⃣ برای دانلود، یکی از سایت‌های منوی اصلی را باز کنید.\n\n"
+            "ربات برای شما به صورت **رایگان و نامحدود** فعال است 💛\n\n"
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
+        return
 
 # ---------- اجرای ربات ----------
 def run_bot():
