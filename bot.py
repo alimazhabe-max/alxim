@@ -14,8 +14,8 @@ async def handle_message(update, context):
     try:
         video = download_instagram(url)
         await update.message.reply_video(video)
-    except Exception as e:
-        await update.message.reply_text("یا لینک اشتباهه، یا ویدیو پیدا نشد.")
+    except:
+        await update.message.reply_text("لینک اشتباهه یا ویدیو پیدا نشد.")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
