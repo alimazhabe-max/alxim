@@ -34,14 +34,13 @@ async def handle_message(update, context):
     user_id = update.message.from_user.id
 
     if not await is_member(user_id, context.bot):
-        await update.message.reply_text(
-            "برای استفاده از ربات عضو کانال شوید 💛",
+        await update.message.chat.send_message(
+            "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛",
             reply_markup=join_buttons()
         )
         return
 
-    # فقط یک پیام با منو، بدون هیچ پیام اضافه
-    await update.message.reply_text(
+    await update.message.chat.send_message(
         "👇 منوی اصلی:",
         reply_markup=main_menu()
     )
