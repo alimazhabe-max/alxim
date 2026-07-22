@@ -33,22 +33,19 @@ def join_buttons():
         [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_join")]
     ])
 
-# ---------- پیام ساده ----------
-async def human(update, text):
-    await update.message.reply_text(text)
-
 # ---------- هندل پیام‌ها ----------
 async def handle_message(update, context):
     user_id = update.message.from_user.id
-    text = update.message.text.strip()
 
     # اول چک عضویت
     if not await is_member(user_id, context.bot):
-        await human(update, "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛")
-        await update.message.reply_text("👇 لطفاً عضو شوید:", reply_markup=join_buttons())
+        await update.message.reply_text(
+            "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛",
+            reply_markup=join_buttons()
+        )
         return
 
-    # اگر عضو بود → منو را نشان بده
+    # اگر عضو بود → فقط یک پیام با منو ارسال کن
     await update.message.reply_text(
         "👇 منوی اصلی:",
         reply_markup=main_menu()
@@ -58,6 +55,7 @@ async def handle_message(update, context):
 async def handle_callback(update, context):
     q = update.callback_query
     await q.answer()
+
     user_id = q.from_user.id
 
     # بررسی عضویت
