@@ -1,4 +1,5 @@
 import os
+import requests
 from flask import Flask
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, MessageHandler, CallbackQueryHandler, filters
@@ -7,7 +8,13 @@ import threading
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHANNEL_ID = "@hmhermi"
 
-# ---------- چک عضویت ----------
+SITES = [
+    ("fastdl.app", "https://fastdl.app/fa2/video", "fastdl"),
+    ("snapinsta.app", "https://snapinsta.app/api/ajax", "snapinsta"),
+    ("saveig.app", "https://saveig.app/api/ajax", "saveig"),
+    ("igram.io", "https://igram.io/api/ajax", "igram"),
+]
+
 async def is_member(user_id, bot):
     try:
         m = await bot.get_chat_member(CHANNEL_ID, user_id)
@@ -15,55 +22,108 @@ async def is_member(user_id, bot):
     except:
         return False
 
-# ---------- منوی اصلی ----------
 def main_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🇮🇷 سایت‌های ایرانی", callback_data="iran")],
-        [InlineKeyboardButton("🌍 سایت‌های خارجی", callback_data="world")],
-        [InlineKeyboardButton("⚡ سریع‌ترین‌ها", callback_data="fast")],
-        [InlineKeyboardButton("📘 استوری و هایلایت", callback_data="story")],
-        [InlineKeyboardButton("👤 عکس پروفایل", callback_data="profile")],
+        [InlineKeyboardButton("⬇️ دانلود ویدیو از اینستاگرام", callback_data="download")],
         [InlineKeyboardButton("ℹ️ راهنما", callback_data="help")]
     ])
 
-# ---------- دکمه عضویت ----------
 def join_buttons():
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📢 عضویت در کانال", url="https://t.me/hmhermi")],
         [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_join")]
     ])
 
-# ---------- پیام ساده ----------
+def download_button(link):
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("⬇️ دانلود مستقیم", url=link)]
+    ])
+
 async def human(update, text):
     await update.message.reply_text(text)
 
-# ---------- هندل پیام‌ها ----------
+def try_fastdl(url):
+    try:
+        r = requests.post("https://fastdl.app/fa2/video", data={"url": url}, timeout=10)
+        j = r.json()
+        return j.get("url")
+    except:
+        return None
+
+def try_snapinsta(url):
+    try:
+        r = requests.post("https://snapinsta.app/api/ajax", data={"url": url, "action": "post"}, timeout=10)
+        j = r.json()
+        return j.get("media")
+    except:
+        return None
+
+def try_saveig(url):
+    try:
+        r = requests.post("https://saveig.app/api/ajax", data={"url": url, "action": "post"}, timeout=10)
+        j = r.json()
+        return j.get("media")
+    except:
+        return None
+
+def try_igram(url):
+    try:
+        r = requests.post("https://igram.io/api/ajax", data={"url": url, "action": "post"}, timeout=10)
+        j = r.json()
+        return j.get("media")
+    except:
+        return None
+
+def get_best_link(url):
+    link = try_fastdl(url)
+    if link:
+        return link, "fastdl.app"
+
+    link = try_snapinsta(url)
+    if link:
+        return link, "snapinsta.app"
+
+    link = try_saveig(url)
+    if link:
+        return link, "saveig.app"
+
+    link = try_igram(url)
+    if link:
+        return link, "igram.io"
+
+    return None, None
+
 async def handle_message(update, context):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
 
-    # فقط لینک اینستاگرام
     if "instagram.com" not in text:
         await human(update, "⚠️ لطفاً فقط لینک‌های اینستاگرام را ارسال کنید 💛")
         return
 
-    # چک عضویت
     if not await is_member(user_id, context.bot):
         await human(update, "برای استفاده از ربات، ابتدا باید عضو کانال شوید 💛")
         await update.message.reply_text("👇 لطفاً عضو شوید:", reply_markup=join_buttons())
         return
 
-    # حس جستجو با ساعت‌شنی
-    await human(update, "⏳ در حال بررسی لینک…")
-    await human(update, "✨ لینک شما بررسی شد!\n\nبرای دانلود، از سایت‌های پیشنهادی در منوی اصلی استفاده کنید 💛")
+    await human(update, "⏳ در حال جستجو بین بهترین سرورها…")
 
-# ---------- هندل دکمه‌ها ----------
+    link, source = get_best_link(text)
+
+    if link:
+        await update.message.reply_text(
+            f"✨ لینک دانلود آماده شد!\n\n"
+            f"✅ سرور: {source}\n",
+            reply_markup=download_button(link)
+        )
+    else:
+        await human(update, "😔 هیچ‌کدام از سرورها نتوانستند لینک را پردازش کنند.\nلطفاً بعداً دوباره امتحان کنید 💛")
+
 async def handle_callback(update, context):
     q = update.callback_query
     await q.answer()
     user_id = q.from_user.id
 
-    # بررسی عضویت
     if q.data == "check_join":
         if await is_member(user_id, context.bot):
             await q.edit_message_text(
@@ -78,94 +138,30 @@ async def handle_callback(update, context):
             )
         return
 
-    # سایت‌های ایرانی
-    if q.data == "iran":
+    if q.data == "download":
         await q.edit_message_text(
-            "🇮🇷 **سایت‌های ایرانی دانلود اینستاگرام:**\n\n"
-            "• fastdl.app\n"
-            "• instadl.ir\n"
-            "• savein.io/fa\n"
-            "• igdownloader.ir\n"
-            "• instasave.ir\n"
-            "• instadl.net\n\n"
-            "👇 منوی اصلی:",
-            reply_markup=main_menu()
+            "لینک اینستاگرام را ارسال کنید تا بهترین سرور برای دانلود انتخاب شود 💛"
         )
         return
 
-    # سایت‌های خارجی
-    if q.data == "world":
-        await q.edit_message_text(
-            "🌍 **سایت‌های خارجی دانلود اینستاگرام:**\n\n"
-            "• snapinsta.app\n"
-            "• saveig.app\n"
-            "• igram.io\n"
-            "• downloadgram.org\n"
-            "• instadownloader.co\n"
-            "• toolzu.com\n"
-            "• savefrom.net\n\n"
-            "👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    # سریع‌ترین‌ها
-    if q.data == "fast":
-        await q.edit_message_text(
-            "⚡ **سریع‌ترین سایت‌های دانلود اینستاگرام:**\n\n"
-            "• fastdl.app\n"
-            "• snapinsta.app\n"
-            "• saveig.app\n"
-            "• igram.io\n\n"
-            "👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    # استوری و هایلایت
-    if q.data == "story":
-        await q.edit_message_text(
-            "📘 **استوری و هایلایت (مشاهده و دانلود):**\n\n"
-            "• storiesig.info\n"
-            "• storysaver.net\n"
-            "• anonyig.com\n\n"
-            "👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    # عکس پروفایل
-    if q.data == "profile":
-        await q.edit_message_text(
-            "👤 **دانلود عکس پروفایل اینستاگرام:**\n\n"
-            "• instadp.io\n"
-            "• fullinstadp.com\n\n"
-            "👇 منوی اصلی:",
-            reply_markup=main_menu()
-        )
-        return
-
-    # راهنما
     if q.data == "help":
         await q.edit_message_text(
             "ℹ️ **راهنما:**\n\n"
             "1️⃣ لینک اینستاگرام را ارسال کنید.\n"
-            "2️⃣ ربات لینک را بررسی می‌کند (⏳).\n"
-            "3️⃣ برای دانلود، یکی از سایت‌های منوی اصلی را باز کنید.\n\n"
+            "2️⃣ ربات بین چند سرور (fastdl, snapinsta, saveig, igram) جستجو می‌کند.\n"
+            "3️⃣ بهترین لینک دانلود را برای شما می‌فرستد.\n\n"
             "ربات برای شما به صورت **رایگان و نامحدود** فعال است 💛\n\n"
             "👇 منوی اصلی:",
             reply_markup=main_menu()
         )
         return
 
-# ---------- اجرای ربات ----------
 def run_bot():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.run_polling()
 
-# ---------- Flask برای Railway ----------
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
