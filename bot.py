@@ -6,8 +6,14 @@ import logging
 import threading
 import requests
 from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    CallbackQueryHandler,
+)
 
 # ====================== تنظیمات ======================
 logging.basicConfig(
@@ -21,24 +27,62 @@ WEATHER_KEY = os.getenv("WEATHER_KEY")
 DB_PATH = "data.db"
 tehran_tz = pytz.timezone("Asia/Tehran")
 
+POSTER_URL = "https://example.com/qom_poster.jpg"  # لینک پوستر مذهبی
+ADMIN_ID = 123456789  # اینجا آیدی خودت را بگذار
+
+CACHE = {
+    "prayer": {},
+    "weather": {},
+    "date": {},
+    "hijri": {}
+}
+CACHE_TTL_SECONDS = 600  # 10 دقیقه
+
 # ====================== دیتابیس ======================
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("CREATE TABLE IF NOT EXISTS subscribers (chat_id INTEGER PRIMARY KEY)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS subscribers (
+            chat_id INTEGER PRIMARY KEY,
+            city TEXT DEFAULT 'Qom',
+            is_vip INTEGER DEFAULT 0
+        )
+    """)
     conn.commit()
     conn.close()
 
 def add_subscriber(chat_id):
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT OR IGNORE INTO subscribers (chat_id) VALUES (?)", (chat_id,))
+    conn.execute(
+        "INSERT OR IGNORE INTO subscribers (chat_id) VALUES (?)",
+        (chat_id,)
+    )
+    conn.commit()
+    conn.close()
+
+def set_city(chat_id, city):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE subscribers SET city = ? WHERE chat_id = ?",
+        (city, chat_id)
+    )
+    conn.commit()
+    conn.close()
+
+def set_vip(chat_id, is_vip=True):
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        "UPDATE subscribers SET is_vip = ? WHERE chat_id = ?",
+        (1 if is_vip else 0, chat_id)
+    )
     conn.commit()
     conn.close()
 
 def get_subscribers():
     conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT chat_id FROM subscribers").fetchall()
+    rows = conn.execute("SELECT chat_id, city, is_vip FROM subscribers").fetchall()
     conn.close()
-    return [r[0] for r in rows]
+    return [{"chat_id": r[0], "city": r[1], "is_vip": bool(r[2])} for r in rows]
 
 def remove_subscriber(chat_id):
     conn = sqlite3.connect(DB_PATH)
@@ -46,54 +90,101 @@ def remove_subscriber(chat_id):
     conn.commit()
     conn.close()
 
-# ====================== API Helper ======================
+# ====================== کش و API ======================
+def cache_get(section, key):
+    now = datetime.datetime.now().timestamp()
+    item = CACHE.get(section, {}).get(key)
+    if not item:
+        return None
+    value, ts = item
+    if now - ts > CACHE_TTL_SECONDS:
+        return None
+    return value
+
+def cache_set(section, key, value):
+    now = datetime.datetime.now().timestamp()
+    if section not in CACHE:
+        CACHE[section] = {}
+    CACHE[section][key] = (value, now)
+
 def safe_request(url, params=None):
     try:
-        r = requests.get(url, params=params, timeout=12)
+        r = requests.get(url, params=params, timeout=10)
         r.raise_for_status()
         return r.json()
     except Exception as e:
         logger.warning(f"API request failed: {e}")
         return None
 
-# ====================== داده‌ها ======================
-def get_prayer_times_qom():
+def get_prayer_times(city):
+    key = city.lower()
+    cached = cache_get("prayer", key)
+    if cached:
+        return cached
+
     data = safe_request(
         "https://api.aladhan.com/v1/timingsByCity",
-        {"city": "Qom", "country": "Iran", "method": 14}
+        {"city": city, "country": "Iran", "method": 14}
     )
     if data and "data" in data:
         t = data["data"]["timings"]
-        return (
+        result = (
             t.get("Fajr", "?"),
             t.get("Dhuhr", "?"),
             t.get("Maghrib", "?"),
             t.get("Isha", "?")
         )
-    return "?", "?", "?", "?"
+    else:
+        result = ("?", "?", "?", "?")
 
-def get_weather_qom():
+    cache_set("prayer", key, result)
+    return result
+
+def get_weather(city):
+    key = city.lower()
+    cached = cache_get("weather", key)
+    if cached:
+        return cached
+
     data = safe_request(
         "https://api.openweathermap.org/data/2.5/weather",
-        {"q": "Qom,IR", "appid": WEATHER_KEY, "units": "metric", "lang": "fa"}
+        {"q": f"{city},IR", "appid": WEATHER_KEY, "units": "metric", "lang": "fa"}
     )
     if data:
-        return data["main"]["temp"], data["weather"][0]["description"]
-    return "N/A", "نامشخص"
+        result = (data["main"]["temp"], data["weather"][0]["description"])
+    else:
+        result = ("N/A", "نامشخص")
+
+    cache_set("weather", key, result)
+    return result
 
 def get_shamsi_date():
+    cached = cache_get("date", "today")
+    if cached:
+        return cached
+
     data = safe_request("https://api.keybit.ir/date/")
-    return data["date"]["full"]["official"] if data else "نامشخص"
+    result = data["date"]["full"]["official"] if data else "نامشخص"
+    cache_set("date", "today", result)
+    return result
 
 def get_hijri_date():
+    cached = cache_get("hijri", "today")
+    if cached:
+        return cached
+
     today = datetime.datetime.now(tehran_tz).strftime("%Y-%m-%d")
     data = safe_request(f"https://api.aladhan.com/v1/gToH?date={today}")
     if data and "data" in data:
         h = data["data"]["hijri"]
-        return f"{h['day']} {h['month']['ar']} {h['year']}", h['day'], h['month']['ar']
-    return "نامشخص", "?", "?"
+        result = (f"{h['day']} {h['month']['ar']} {h['year']}", h['day'], h['month']['ar'])
+    else:
+        result = ("نامشخص", "?", "?")
 
-# ====================== مناسبت‌ها ======================
+    cache_set("hijri", "today", result)
+    return result
+
+# ====================== مناسبت‌ها و ذکر ======================
 def get_shia_event(day, month):
     events = {
         ("18", "ذی الحجه"): "عید سعید غدیر خم 💛",
@@ -110,59 +201,238 @@ def get_daily_dhikr():
     return "لا حول و لا قوة إلا بالله العلی العظیم"
 
 # ====================== ساخت پیام ======================
-async def build_message():
-    shamsi = get_shamsi_date()
-    hijri, hijri_day, hijri_month = get_hijri_date()
-    event = get_shia_event(hijri_day, hijri_month)
-    fajr, dhuhr, maghrib, isha = get_prayer_times_qom()
-    temp, desc = get_weather_qom()
+def build_message_text(city, is_vip=False):
+    try:
+        shamsi = get_shamsi_date()
+        hijri, hijri_day, hijri_month = get_hijri_date()
+        event = get_shia_event(hijri_day, hijri_month)
+        fajr, dhuhr, maghrib, isha = get_prayer_times(city)
+        temp, desc = get_weather(city)
+    except Exception as e:
+        logger.error(f"Build message failed: {e}")
+        shamsi = "نامشخص"
+        hijri = "نامشخص"
+        event = "روز خوبی برای دعا و توسل به اهل‌بیت علیهم‌السلام"
+        fajr = dhuhr = maghrib = isha = "?"
+        temp, desc = "N/A", "نامشخص"
+
     dhikr = get_daily_dhikr()
 
+    vip_line = ""
+    if is_vip:
+        vip_line = "⭐ گزارش ویژهٔ VIP برای شما آماده شد.\n\n"
+
     return (
-        "✨ گزارش شبانه قم ✨\n\n"
-        f"📅 شمسی: {shamsi}\n"
-        f"📆 قمری: {hijri}\n"
-        f"🕊 مناسبت: {event}\n\n"
-        "🕌 اوقات شرعی:\n"
+        "✨ گزارش شبانه شیعی ✨\n\n"
+        f"{vip_line}"
+        "📂 بخش تاریخ:\n"
+        f"• شمسی: {shamsi}\n"
+        f"• قمری: {hijri}\n"
+        f"• مناسبت: {event}\n\n"
+        "🕌 بخش اوقات شرعی:\n"
+        f"• شهر: {city}\n"
         f"• فجر: {fajr}\n"
         f"• ظهر: {dhuhr}\n"
         f"• مغرب: {maghrib}\n"
         f"• عشاء: {isha}\n\n"
-        f"🌤 آب و هوا: {temp}°C - {desc}\n\n"
-        f"💬 ذکر روز: {dhikr}\n\n"
+        "🌤 بخش آب و هوا:\n"
+        f"• دما: {temp}°C\n"
+        f"• وضعیت: {desc}\n\n"
+        "💬 بخش ذکر روز:\n"
+        f"• {dhikr}\n\n"
         "اللهم عجل لولیک الفرج 💛"
     )
 
-# ====================== هندلرها ======================
+# ====================== هندلرهای اصلی ======================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    add_subscriber(update.effective_chat.id)
-    await update.message.reply_text("ثبت شد! هر شب ساعت ۱۲ گزارش برات ارسال می‌شه.")
+    chat_id = update.effective_chat.id
+    add_subscriber(chat_id)
 
-async def test_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = await build_message()
-    await update.message.reply_text("📨 گزارش تستی:\n\n" + msg)
+    keyboard = [
+        [InlineKeyboardButton("🏙 انتخاب شهر", callback_data="menu_city")],
+        [InlineKeyboardButton("⭐ تنظیم VIP", callback_data="menu_vip")],
+        [InlineKeyboardButton("📨 گزارش تستی", callback_data="menu_test")],
+    ]
+    await update.message.reply_text(
+        "✅ ثبت شد!\nهر شب ساعت ۱۲ گزارش برات ارسال می‌شه.\n"
+        "از دکمه‌های زیر استفاده کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 async def unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remove_subscriber(update.effective_chat.id)
     await update.message.reply_text("❌ از لیست دریافت گزارش حذف شدید.")
 
 async def nightly_job(context: ContextTypes.DEFAULT_TYPE):
+    logger.info("اجرای گزارش شبانه...")
     subs = get_subscribers()
     if not subs:
         return
-    msg = await build_message()
-    for chat_id in subs:
+
+    for s in subs:
+        chat_id = s["chat_id"]
+        city = s["city"]
+        is_vip = s["is_vip"]
         try:
+            msg = build_message_text(city, is_vip)
             await context.bot.send_message(chat_id=chat_id, text=msg)
+            await context.bot.send_photo(chat_id=chat_id, photo=POSTER_URL)
         except Exception as e:
             logger.warning(f"Failed to send to {chat_id}: {e}")
+
+# ====================== منوی شهر (اینلاین) ======================
+async def choose_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("قم", callback_data="city_Qom")],
+        [InlineKeyboardButton("تهران", callback_data="city_Tehran")],
+        [InlineKeyboardButton("مشهد", callback_data="city_Mashhad")],
+        [InlineKeyboardButton("شیراز", callback_data="city_Shiraz")],
+    ]
+    await update.message.reply_text(
+        "🏙 شهر مورد نظر را انتخاب کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def city_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    city = query.data.replace("city_", "")
+    set_city(chat_id, city)
+
+    await query.edit_message_text(f"✅ شهر شما روی «{city}» تنظیم شد.")
+
+# ====================== منوی VIP (اینلاین) ======================
+async def vip_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("⭐ فعال کردن VIP", callback_data="vip_on")],
+        [InlineKeyboardButton("❌ غیرفعال کردن VIP", callback_data="vip_off")],
+    ]
+    await update.message.reply_text(
+        "وضعیت VIP را انتخاب کن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def vip_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+
+    if query.data == "vip_on":
+        set_vip(chat_id, True)
+        await query.edit_message_text("⭐ VIP فعال شد.")
+    else:
+        set_vip(chat_id, False)
+        await query.edit_message_text("❌ VIP غیرفعال شد.")
+
+# ====================== منوی تست گزارش (اینلاین) ======================
+async def test_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📨 دریافت گزارش تستی", callback_data="test_report")]
+    ]
+    await update.message.reply_text(
+        "برای تست گزارش دکمه زیر را بزن:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def test_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    chat_id = query.message.chat_id
+    subs = get_subscribers()
+    user = next((s for s in subs if s["chat_id"] == chat_id), None)
+
+    if not user:
+        await query.edit_message_text("❗ اول /start را بزن تا ثبت شوی.")
+        return
+
+    city = user["city"]
+    is_vip = user["is_vip"]
+
+    msg = build_message_text(city, is_vip)
+
+    await query.edit_message_text("📨 گزارش تستی:\n\n" + msg)
+    await query.message.reply_photo(POSTER_URL)
+
+# ====================== پنل مدیریت (اینلاین) ======================
+async def admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.id != ADMIN_ID:
+        await update.message.reply_text("⛔ فقط مدیر می‌تواند وارد پنل شود.")
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("👥 تعداد اعضا", callback_data="admin_count")],
+        [InlineKeyboardButton("⭐ VIP ها", callback_data="admin_vip")],
+        [InlineKeyboardButton("🏙 شهرها", callback_data="admin_cities")],
+    ]
+
+    await update.message.reply_text(
+        "🛠 پنل مدیریت:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+async def admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.message.chat_id != ADMIN_ID:
+        await query.edit_message_text("⛔ فقط مدیر می‌تواند این دکمه‌ها را استفاده کند.")
+        return
+
+    subs = get_subscribers()
+
+    if query.data == "admin_count":
+        await query.edit_message_text(f"👥 تعداد اعضا: {len(subs)}")
+
+    elif query.data == "admin_vip":
+        vip_count = sum(1 for s in subs if s["is_vip"])
+        await query.edit_message_text(f"⭐ تعداد VIP: {vip_count}")
+
+    elif query.data == "admin_cities":
+        cities = {}
+        for s in subs:
+            cities[s["city"]] = cities.get(s["city"], 0) + 1
+        text = "\n".join([f"• {c}: {n} نفر" for c, n in cities.items()]) or "هیچ شهری ثبت نشده."
+        await query.edit_message_text("🏙 توزیع شهرها:\n" + text)
+
+# ====================== منوی اصلی اینلاین ======================
+async def main_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    if data == "menu_city":
+        # باز کردن منوی شهر
+        fake_update = Update(
+            update.update_id,
+            message=query.message
+        )
+        await choose_city(fake_update, context)
+
+    elif data == "menu_vip":
+        fake_update = Update(
+            update.update_id,
+            message=query.message
+        )
+        await vip_menu(fake_update, context)
+
+    elif data == "menu_test":
+        fake_update = Update(
+            update.update_id,
+            message=query.message
+        )
+        await test_menu(fake_update, context)
 
 # ====================== Flask ======================
 app_flask = Flask(__name__)
 
 @app_flask.route("/")
 def home():
-    return "Nightly Shia Report Bot is running!"
+    return "Nightly Shia Report Bot is running with cache, VIP, multi-city & inline buttons!"
 
 def run_flask():
     app_flask.run(host="0.0.0.0", port=10000)
@@ -173,11 +443,27 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # دستورات
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("test", test_report))
     app.add_handler(CommandHandler("unsubscribe", unsubscribe))
+    app.add_handler(CommandHandler("admin", admin_menu))
 
-    # JobQueue نسخهٔ 21.4 فعال است
+    # اینلاین منو اصلی
+    app.add_handler(CallbackQueryHandler(main_menu_callback, pattern="^menu_"))
+
+    # اینلاین شهر
+    app.add_handler(CallbackQueryHandler(city_callback, pattern="^city_"))
+
+    # اینلاین VIP
+    app.add_handler(CallbackQueryHandler(vip_callback, pattern="^vip_"))
+
+    # اینلاین تست
+    app.add_handler(CallbackQueryHandler(test_callback, pattern="^test_"))
+
+    # اینلاین پنل مدیریت
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern="^admin_"))
+
+    # JobQueue
     app.job_queue.run_daily(
         nightly_job,
         time=datetime.time(0, 0, tzinfo=tehran_tz)
