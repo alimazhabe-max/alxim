@@ -9,16 +9,15 @@ from apscheduler.triggers.cron import CronTrigger
 import random
 import asyncio
 from hijri_converter import Gregorian
+from functools import lru_cache
+from datetime import datetime, timedelta as dt_timedelta
 
-# --- گرفتن توکن از محیط ---
+# --- تنظیمات اولیه ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("متغیر BOT_TOKEN در محیط تنظیم نشده است!")
 
-# --- دیکشنری برای ذخیره شهر هر کاربر ---
 user_cities = {}
-
-# --- مجموعه برای ذخیره کاربرانی که ربات رو استارت کردن ---
 subscribed_users = set()
 
 # --- لیست پیام‌های انگیزشی ---
@@ -56,14 +55,26 @@ def get_motivation():
     last_motivation_index = index
     return motivation_messages[index]
 
-# --- توابع اصلی ---
+# --- توابع با Retry و Cache ---
+def retry_request(url, timeout=5, retries=2):
+    for i in range(retries):
+        try:
+            response = requests.get(url, timeout=timeout)
+            if response.status_code == 200:
+                return response
+        except:
+            pass
+    return None
+
 def get_user_city(user_id):
     return user_cities.get(user_id, "قم")
 
 def get_prayer_times(city, country="Iran"):
     try:
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=8"
-        response = requests.get(url, timeout=10)
+        response = retry_request(url)
+        if not response:
+            return None
         data = response.json()
         timings = data["data"]["timings"]
         return {
@@ -74,14 +85,15 @@ def get_prayer_times(city, country="Iran"):
             "اذان مغرب": timings["Maghrib"],
             "اذان عشاء": timings["Isha"],
         }
-    except Exception as e:
-        print(f"خطا در دریافت اوقات شرعی برای {city}: {e}")
+    except:
         return None
 
 def get_weather(city):
     try:
         url = f"https://wttr.in/{city}?format=j1"
-        response = requests.get(url, timeout=10)
+        response = retry_request(url)
+        if not response:
+            return None
         data = response.json()
         current = data["current_condition"][0]
         return {
@@ -89,31 +101,45 @@ def get_weather(city):
             "وضعیت": current["weatherDesc"][0]["value"],
             "رطوبت": f"{current['humidity']}%",
         }
-    except Exception as e:
-        print(f"خطا در دریافت آب و هوا برای {city}: {e}")
+    except:
         return None
 
+# --- قیمت طلا و دلار با دو سرویس مختلف ---
 def get_gold_usd_prices():
+    # سرویس اول: Nerkh
     try:
         url = "https://api.nerkh.io/v2/prices/json/lite"
-        response = requests.get(url, timeout=10)
-        data = response.json()
-        gold_price = None
-        usd_price = None
-        for item in data:
-            if item.get('symbol') == 'GOLD18K':
-                gold_price = item.get('price')
-            elif item.get('symbol') == 'USD':
-                usd_price = item.get('price')
-        return {
-            "طلا (۱۸ عیار)": gold_price,
-            "دلار": usd_price
-        }
-    except Exception as e:
-        print(f"خطا در دریافت قیمت طلا و دلار: {e}")
-        return None
+        response = retry_request(url, timeout=3)
+        if response:
+            data = response.json()
+            gold_price = None
+            usd_price = None
+            for item in data:
+                if item.get('symbol') == 'GOLD18K':
+                    gold_price = item.get('price')
+                elif item.get('symbol') == 'USD':
+                    usd_price = item.get('price')
+            if gold_price and usd_price:
+                return {"طلا (۱۸ عیار)": gold_price, "دلار": usd_price}
+    except:
+        pass
+    
+    # سرویس دوم: TGJU (جایگزین)
+    try:
+        url = "https://www.tgju.org/api/price"
+        response = retry_request(url, timeout=3)
+        if response:
+            data = response.json()
+            gold = data.get('GOLD_18K', {}).get('price')
+            usd = data.get('USD', {}).get('price')
+            if gold and usd:
+                return {"طلا (۱۸ عیار)": gold, "دلار": usd}
+    except:
+        pass
+    
+    return None
 
-# --- تبدیل تاریخ به قمری (هجری قمری) ---
+# --- تاریخ قمری ---
 def get_hijri_date(g_date):
     try:
         hijri = Gregorian(g_date.year, g_date.month, g_date.day).to_hijri()
@@ -122,62 +148,94 @@ def get_hijri_date(g_date):
             5: "جمادی‌الاول", 6: "جمادی‌الثانی", 7: "رجب", 8: "شعبان",
             9: "رمضان", 10: "شوال", 11: "ذی‌قعده", 12: "ذی‌الحجه"
         }
-        # نام روزهای هفته قمری (تقریباً مشابه است، ولی عددی می‌نویسیم)
         return f"{hijri.day} {hijri_months[hijri.month]} {hijri.year}"
-    except Exception as e:
-        print(f"خطا در تبدیل به قمری: {e}")
+    except:
         return "نامشخص"
 
-# --- دریافت مناسبت‌ها برای یک تاریخ شمسی مشخص ---
+# --- کش کردن مناسبت‌ها (برای ۲۴ ساعت) ---
+events_cache = {}
+events_cache_time = {}
+
 def get_events_for_jalali(year, month, day):
+    cache_key = f"{year}-{month}-{day}"
+    
+    # اگر در کش باشه و کمتر از ۲۴ ساعت گذشته باشه، از کش استفاده کن
+    if cache_key in events_cache:
+        cache_time = events_cache_time.get(cache_key)
+        if cache_time and (datetime.now() - cache_time).seconds < 86400:
+            return events_cache[cache_key]
+    
     try:
-        # ابتدا سعی می‌کنیم از کتابخانه rokh استفاده کنیم
+        # تلاش با rokh
         try:
             from rokh import get_day_events, DateSystem
             events_data = get_day_events(year, month, day, system=DateSystem.JALALI)
-            events_list = []
+            events = []
             if events_data:
                 if isinstance(events_data, list):
                     for event in events_data:
                         if isinstance(event, dict) and 'description' in event:
-                            events_list.append(event['description'])
+                            events.append(event['description'])
                 elif isinstance(events_data, dict) and 'events' in events_data:
                     for event in events_data['events']:
                         if 'description' in event:
-                            events_list.append(event['description'])
-            return events_list if events_list else ["هیچ مناسبت خاصی ثبت نشده است."]
+                            events.append(event['description'])
+            if events:
+                events_cache[cache_key] = events
+                events_cache_time[cache_key] = datetime.now()
+                return events
         except:
-            # راه‌اندازی مجدد با API مستقیم time.ir
-            url = f"https://www.time.ir/fa/event/list/0/{year}/{month}/{day}"
-            response = requests.get(url, timeout=10)
+            pass
+        
+        # تلاش با time.ir
+        url = f"https://www.time.ir/fa/event/list/0/{year}/{month}/{day}"
+        response = retry_request(url, timeout=3)
+        if response:
             data = response.json()
             events = []
             if 'events' in data:
                 for item in data['events']:
                     if item.get('type') == 'jalali' or 'description' in item:
                         events.append(item.get('description', item.get('title', 'رویداد')))
-            return events if events else ["هیچ مناسبت خاصی ثبت نشده است."]
-    except Exception as e:
-        print(f"خطا در دریافت رویدادها برای {year}/{month}/{day}: {e}")
-        return ["امکان دریافت مناسبت‌ها وجود ندارد."]
+            if events:
+                events_cache[cache_key] = events
+                events_cache_time[cache_key] = datetime.now()
+                return events
+    except:
+        pass
+    
+    # اگر هیچ‌کدام جواب نداد، لیست پشتیبان (برای مناسبت‌های مهم)
+    fallback_events = {
+        "1-1": ["جشن نوروز", "سال نو"],
+        "12-29": ["شهادت امام علی (ع)"],
+        "12-30": ["شهادت امام علی (ع)"],
+        "1-13": ["روز طبیعت"],
+        "2-14": ["ولادت حضرت معصومه (س)"],
+        "3-21": ["ولادت امام رضا (ع)"],
+        # می‌تونی بیشتر اضافه کنی
+    }
+    key = f"{month}-{day}"
+    events = fallback_events.get(key, ["هیچ مناسبت خاصی ثبت نشده است."])
+    events_cache[cache_key] = events
+    events_cache_time[cache_key] = datetime.now()
+    return events
 
 # --- ساخت پیام کامل ---
 def build_message(user_name, city):
-    # تاریخ امروز (شمسی و قمری)
+    # تاریخ امروز
     today = jdatetime.date.today()
     persian_date = today.strftime("%A %d %B %Y")
     hijri_today = get_hijri_date(today.togregorian())
     
-    # تاریخ فردا (شمسی و قمری)
+    # تاریخ فردا
     tomorrow = today + timedelta(days=1)
     persian_tomorrow = tomorrow.strftime("%A %d %B %Y")
     hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
     
-    # مناسبت‌های امروز
+    # مناسبت‌ها
     today_events = get_events_for_jalali(today.year, today.month, today.day)
     today_events_text = "\n".join([f"• {event}" for event in today_events])
     
-    # مناسبت‌های فردا
     tomorrow_events = get_events_for_jalali(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_events_text = "\n".join([f"• {event}" for event in tomorrow_events])
     
@@ -209,7 +267,7 @@ def build_message(user_name, city):
     # پیام انگیزشی
     motivation = get_motivation()
     
-    # ساخت پیام نهایی
+    # پیام نهایی
     message = (
         f"🌟 **سلام {user_name} عزیز!** 🌟\n\n"
         f"📅 **امروز (شمسی):** {persian_date}\n"
@@ -227,7 +285,7 @@ def build_message(user_name, city):
     )
     return message
 
-# --- دستور /start ---
+# --- دستورات ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -236,7 +294,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = build_message(user.first_name, city)
     await update.message.reply_text(message)
 
-# --- دستور /city ---
 async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
@@ -260,7 +317,7 @@ async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"برای مشاهده اطلاعات، دوباره `/start` رو بفرست."
     )
 
-# --- تابع ارسال خودکار روزانه (ساعت 00:00) ---
+# --- ارسال خودکار ---
 async def send_daily_messages(app):
     print("⏰ ارسال خودکار روزانه شروع شد...")
     for user_id in list(subscribed_users):
@@ -275,11 +332,11 @@ async def send_daily_messages(app):
             message = build_message(user_name, city)
             await app.bot.send_message(chat_id=user_id, text=message)
             print(f"✅ پیام به کاربر {user_id} ارسال شد.")
+            await asyncio.sleep(0.5)  # جلوگیری از محدودیت Rate Limiting
         except Exception as e:
             print(f"❌ خطا در ارسال به کاربر {user_id}: {e}")
     print("🏁 ارسال خودکار روزانه پایان یافت.")
 
-# --- تابع راه‌اندازی زمان‌بند ---
 def start_scheduler(app):
     scheduler = BackgroundScheduler()
     scheduler.add_job(
@@ -287,15 +344,14 @@ def start_scheduler(app):
         CronTrigger(hour=0, minute=0, timezone="Asia/Tehran")
     )
     scheduler.start()
-    print("⏰ زمان‌بند ارسال خودکار فعال شد (هر روز ساعت 00:00).")
+    print("⏰ زمان‌بند ارسال خودکار فعال شد.")
 
-# --- اجرای اصلی ---
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("city", set_city))
     start_scheduler(app)
-    print("✅ ربات کامل با تاریخ قمری و وقایع فردا روشن شد...")
+    print("✅ ربات بهینه‌شده روشن شد...")
     app.run_polling()
 
 if __name__ == "__main__":
