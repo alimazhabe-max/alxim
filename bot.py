@@ -104,36 +104,56 @@ def get_weather(city):
     except:
         return None
 
-# --- قیمت طلا و دلار با دو سرویس مختلف ---
+# --- قیمت طلا و دلار با سرویس جدید (Nerkh.io) ---
 def get_gold_usd_prices():
-    # سرویس اول: Nerkh
     try:
-        url = "https://api.nerkh.io/v2/prices/json/lite"
-        response = retry_request(url, timeout=3)
+        # سرویس Nerkh.io - کاملاً رایگان و بدون نیاز به ثبت‌نام
+        url = "https://api.nerkh.io/v1/prices"  # آدرس جدید
+        response = retry_request(url, timeout=5)
         if response:
             data = response.json()
+            
+            # پیدا کردن قیمت طلا و دلار
             gold_price = None
             usd_price = None
-            for item in data:
-                if item.get('symbol') == 'GOLD18K':
-                    gold_price = item.get('price')
-                elif item.get('symbol') == 'USD':
-                    usd_price = item.get('price')
+            
+            # داده‌ها معمولاً به این شکل هستن
+            if isinstance(data, dict):
+                # اگر به صورت دیکشنری برگشت
+                for key, value in data.items():
+                    if 'gold' in key.lower() or 'طلا' in key:
+                        if isinstance(value, dict) and 'price' in value:
+                            gold_price = value['price']
+                        else:
+                            gold_price = value
+                    elif 'usd' in key.lower() or 'دلار' in key:
+                        if isinstance(value, dict) and 'price' in value:
+                            usd_price = value['price']
+                        else:
+                            usd_price = value
+            
+            # اگر به صورت لیست برگشت
+            elif isinstance(data, list):
+                for item in data:
+                    symbol = item.get('symbol', '').upper()
+                    if symbol == 'GOLD' or symbol == 'GOLD18K' or 'طلا' in item.get('name', ''):
+                        gold_price = item.get('price')
+                    elif symbol == 'USD' or 'دلار' in item.get('name', ''):
+                        usd_price = item.get('price')
+            
             if gold_price and usd_price:
-                return {"طلا (۱۸ عیار)": gold_price, "دلار": usd_price}
-    except:
-        pass
+                return {
+                    "طلا (۱۸ عیار)": int(gold_price),
+                    "دلار": int(usd_price)
+                }
+    except Exception as e:
+        print(f"خطا در دریافت قیمت از Nerkh.io: {e}")
     
-    # سرویس دوم: TGJU (جایگزین)
+    # --- سرویس پشتیبان: Navasan (نیاز به کلید) ---
     try:
-        url = "https://www.tgju.org/api/price"
-        response = retry_request(url, timeout=3)
-        if response:
-            data = response.json()
-            gold = data.get('GOLD_18K', {}).get('price')
-            usd = data.get('USD', {}).get('price')
-            if gold and usd:
-                return {"طلا (۱۸ عیار)": gold, "دلار": usd}
+        # این سرویس نیاز به دریافت کلید از @navasan_contact_bot دارد
+        # فعلاً غیرفعال، در صورت نیاز فعالش کن
+        pass
     except:
         pass
     
@@ -152,21 +172,19 @@ def get_hijri_date(g_date):
     except:
         return "نامشخص"
 
-# --- کش کردن مناسبت‌ها (برای ۲۴ ساعت) ---
+# --- کش کردن مناسبت‌ها ---
 events_cache = {}
 events_cache_time = {}
 
 def get_events_for_jalali(year, month, day):
     cache_key = f"{year}-{month}-{day}"
     
-    # اگر در کش باشه و کمتر از ۲۴ ساعت گذشته باشه، از کش استفاده کن
     if cache_key in events_cache:
         cache_time = events_cache_time.get(cache_key)
         if cache_time and (datetime.now() - cache_time).seconds < 86400:
             return events_cache[cache_key]
     
     try:
-        # تلاش با rokh
         try:
             from rokh import get_day_events, DateSystem
             events_data = get_day_events(year, month, day, system=DateSystem.JALALI)
@@ -187,7 +205,6 @@ def get_events_for_jalali(year, month, day):
         except:
             pass
         
-        # تلاش با time.ir
         url = f"https://www.time.ir/fa/event/list/0/{year}/{month}/{day}"
         response = retry_request(url, timeout=3)
         if response:
@@ -204,7 +221,6 @@ def get_events_for_jalali(year, month, day):
     except:
         pass
     
-    # اگر هیچ‌کدام جواب نداد، لیست پشتیبان (برای مناسبت‌های مهم)
     fallback_events = {
         "1-1": ["جشن نوروز", "سال نو"],
         "12-29": ["شهادت امام علی (ع)"],
@@ -212,7 +228,6 @@ def get_events_for_jalali(year, month, day):
         "1-13": ["روز طبیعت"],
         "2-14": ["ولادت حضرت معصومه (س)"],
         "3-21": ["ولادت امام رضا (ع)"],
-        # می‌تونی بیشتر اضافه کنی
     }
     key = f"{month}-{day}"
     events = fallback_events.get(key, ["هیچ مناسبت خاصی ثبت نشده است."])
@@ -222,24 +237,20 @@ def get_events_for_jalali(year, month, day):
 
 # --- ساخت پیام کامل ---
 def build_message(user_name, city):
-    # تاریخ امروز
     today = jdatetime.date.today()
     persian_date = today.strftime("%A %d %B %Y")
     hijri_today = get_hijri_date(today.togregorian())
     
-    # تاریخ فردا
     tomorrow = today + timedelta(days=1)
     persian_tomorrow = tomorrow.strftime("%A %d %B %Y")
     hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
     
-    # مناسبت‌ها
     today_events = get_events_for_jalali(today.year, today.month, today.day)
     today_events_text = "\n".join([f"• {event}" for event in today_events])
     
     tomorrow_events = get_events_for_jalali(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_events_text = "\n".join([f"• {event}" for event in tomorrow_events])
     
-    # اوقات شرعی
     prayer_times = get_prayer_times(city)
     prayer_text = ""
     if prayer_times:
@@ -248,7 +259,6 @@ def build_message(user_name, city):
     else:
         prayer_text = "⚠️ اوقات شرعی در دسترس نیست."
     
-    # آب و هوا
     weather = get_weather(city)
     weather_text = ""
     if weather:
@@ -256,18 +266,15 @@ def build_message(user_name, city):
     else:
         weather_text = "⚠️ اطلاعات آب و هوا در دسترس نیست."
     
-    # قیمت طلا و دلار
     prices = get_gold_usd_prices()
     prices_text = ""
     if prices:
         prices_text = f"💰 طلا (۱۸ عیار): {prices['طلا (۱۸ عیار)']:,} تومان\n💵 دلار: {prices['دلار']:,} تومان"
     else:
-        prices_text = "⚠️ قیمت طلا و دلار در دسترس نیست."
+        prices_text = "⚠️ قیمت طلا و دلار در دسترس نیست.\n(سرویس موقتاً در دسترس نیست، لطفاً بعداً امتحان کنید)"
     
-    # پیام انگیزشی
     motivation = get_motivation()
     
-    # پیام نهایی
     message = (
         f"🌟 **سلام {user_name} عزیز!** 🌟\n\n"
         f"📅 **امروز (شمسی):** {persian_date}\n"
@@ -332,7 +339,7 @@ async def send_daily_messages(app):
             message = build_message(user_name, city)
             await app.bot.send_message(chat_id=user_id, text=message)
             print(f"✅ پیام به کاربر {user_id} ارسال شد.")
-            await asyncio.sleep(0.5)  # جلوگیری از محدودیت Rate Limiting
+            await asyncio.sleep(0.5)
         except Exception as e:
             print(f"❌ خطا در ارسال به کاربر {user_id}: {e}")
     print("🏁 ارسال خودکار روزانه پایان یافت.")
@@ -351,7 +358,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("city", set_city))
     start_scheduler(app)
-    print("✅ ربات بهینه‌شده روشن شد...")
+    print("✅ ربات بهینه‌شده با API جدید روشن شد...")
     app.run_polling()
 
 if __name__ == "__main__":
