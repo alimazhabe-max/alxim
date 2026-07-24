@@ -107,39 +107,16 @@ def get_weather(city):
 # --- قیمت طلا و دلار با سرویس جدید (Nerkh.io) ---
 def get_gold_usd_prices():
     try:
-        # سرویس Nerkh.io - کاملاً رایگان و بدون نیاز به ثبت‌نام
-        url = "https://api.nerkh.io/v1/prices"  # آدرس جدید
+        # استفاده از سرویس BRSAPI (رایگان، بدون نیاز به کلید)
+        url = "https://brsapi.ir/free-api/gold-currency"
         response = retry_request(url, timeout=5)
         if response:
             data = response.json()
             
-            # پیدا کردن قیمت طلا و دلار
-            gold_price = None
-            usd_price = None
-            
-            # داده‌ها معمولاً به این شکل هستن
-            if isinstance(data, dict):
-                # اگر به صورت دیکشنری برگشت
-                for key, value in data.items():
-                    if 'gold' in key.lower() or 'طلا' in key:
-                        if isinstance(value, dict) and 'price' in value:
-                            gold_price = value['price']
-                        else:
-                            gold_price = value
-                    elif 'usd' in key.lower() or 'دلار' in key:
-                        if isinstance(value, dict) and 'price' in value:
-                            usd_price = value['price']
-                        else:
-                            usd_price = value
-            
-            # اگر به صورت لیست برگشت
-            elif isinstance(data, list):
-                for item in data:
-                    symbol = item.get('symbol', '').upper()
-                    if symbol == 'GOLD' or symbol == 'GOLD18K' or 'طلا' in item.get('name', ''):
-                        gold_price = item.get('price')
-                    elif symbol == 'USD' or 'دلار' in item.get('name', ''):
-                        usd_price = item.get('price')
+            # دریافت قیمت طلا (۱۸ عیار)
+            gold_price = data.get('gold', {}).get('18', {}).get('price')
+            # دریافت قیمت دلار
+            usd_price = data.get('currency', {}).get('usd', {}).get('price')
             
             if gold_price and usd_price:
                 return {
@@ -147,7 +124,30 @@ def get_gold_usd_prices():
                     "دلار": int(usd_price)
                 }
     except Exception as e:
-        print(f"خطا در دریافت قیمت از Nerkh.io: {e}")
+        print(f"خطا در دریافت قیمت از BRSAPI: {e}")
+    
+    # --- سرویس پشتیبان: Nerkh V2 ---
+    try:
+        url = "https://api.nerkh.io/v2/prices/json"
+        response = retry_request(url, timeout=3)
+        if response:
+            data = response.json()
+            gold_price = None
+            usd_price = None
+            for item in data:
+                if item.get('symbol') == 'GOLD18K':
+                    gold_price = item.get('price')
+                elif item.get('symbol') == 'USD':
+                    usd_price = item.get('price')
+            if gold_price and usd_price:
+                return {
+                    "طلا (۱۸ عیار)": int(gold_price),
+                    "دلار": int(usd_price)
+                }
+    except Exception as e:
+        print(f"خطا در دریافت قیمت از Nerkh V2: {e}")
+    
+    return None
     
     # --- سرویس پشتیبان: Navasan (نیاز به کلید) ---
     try:
