@@ -589,7 +589,7 @@ def get_motivation():
     return motivation_messages[index]
 
 # ============================================================
-# 8. ساخت پیام اصلی
+# 8. ساخت پیام اصلی (کاملاً اصلاح‌شده)
 # ============================================================
 def build_message(user_id, user_name, city):
     lang = get_user_language(user_id)
