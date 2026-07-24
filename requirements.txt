@@ -2,3 +2,4 @@ python-telegram-bot==21.6
 jdatetime==4.1.1
 requests==2.31.0
 rokh==0.4
+apscheduler==3.10.4
