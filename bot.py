@@ -603,7 +603,6 @@ def build_message(user_id, user_name, city):
     hijri_today_text = "\n".join([f"• {event}" for event in hijri_today_events])
     
     tomorrow = today + timedelta(days=1)
-    persian_tomorrow = tomorrow.strftime("%A %d %B %Y")
     hijri_tomorrow_obj = Gregorian(tomorrow.togregorian().year, tomorrow.togregorian().month, tomorrow.togregorian().day).to_hijri()
     hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
     hijri_tomorrow_events = get_hijri_events(hijri_tomorrow_obj.month, hijri_tomorrow_obj.day)
@@ -632,21 +631,21 @@ def build_message(user_id, user_name, city):
     
     motivation = get_motivation()
     
-    message = (
-        TEXTS[lang]["welcome"].format(name=user_name) + "\n\n"
-        TEXTS[lang]["date"].format(persian=persian_date) + "\n"
-        TEXTS[lang]["hijri"].format(hijri=hijri_today) + "\n"
-        TEXTS[lang]["hijri_events_today"] + "\n" + hijri_today_text + "\n\n"
-        TEXTS[lang]["hijri_events_tomorrow"] + "\n" + hijri_tomorrow_text + "\n\n"
-        TEXTS[lang]["shamsi_events_today"] + "\n" + today_events_text + "\n\n"
-        TEXTS[lang]["shamsi_events_tomorrow"] + "\n" + tomorrow_events_text + "\n\n"
-        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n"
-        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n"
-        TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n"
+    message = "\n\n".join([
+        TEXTS[lang]["welcome"].format(name=user_name),
+        TEXTS[lang]["date"].format(persian=persian_date),
+        TEXTS[lang]["hijri"].format(hijri=hijri_today),
+        TEXTS[lang]["hijri_events_today"] + "\n" + hijri_today_text,
+        TEXTS[lang]["hijri_events_tomorrow"] + "\n" + hijri_tomorrow_text,
+        TEXTS[lang]["shamsi_events_today"] + "\n" + today_events_text,
+        TEXTS[lang]["shamsi_events_tomorrow"] + "\n" + tomorrow_events_text,
+        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text,
+        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text,
+        TEXTS[lang]["motivation"] + "\n" + motivation,
         TEXTS[lang]["change_city"]
-    )
-    return message
-
+    ])
+    
+    return message  # ⬅️ این خط را حتماً اضافه کنید
 # ============================================================
 # 9. دکمه‌ها
 # ============================================================
