@@ -4,7 +4,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import jdatetime
 from jdatetime import timedelta
 import os
-from apscheduler.schedulers.asyncio import AsyncIOScheduler  # تغییر مهم
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import random
 import asyncio
@@ -18,7 +18,7 @@ if not BOT_TOKEN:
 
 user_cities = {}
 subscribed_users = set()
-scheduler = None  # برای نگهداری شیء زمان‌بند
+scheduler = None
 
 # --- لیست پیام‌های انگیزشی ---
 motivation_messages = [
@@ -104,7 +104,7 @@ def get_weather(city):
     except:
         return None
 
-# --- قیمت طلا و دلار با BRSAPI (رایگان، بدون کلید) ---
+# --- قیمت طلا و دلار (BRSAPI) ---
 def get_gold_usd_prices():
     try:
         url = "https://brsapi.ir/free-api/gold-currency"
@@ -121,7 +121,7 @@ def get_gold_usd_prices():
     except Exception as e:
         print(f"خطا در دریافت قیمت از BRSAPI: {e}")
     
-    # سرویس پشتیبان (در صورت نیاز)
+    # Fallback: Nerkh V2
     try:
         url = "https://api.nerkh.io/v2/prices/json"
         response = retry_request(url, timeout=3)
@@ -292,7 +292,7 @@ async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"برای مشاهده اطلاعات، دوباره `/start` رو بفرست."
     )
 
-# --- ارسال خودکار (با AsyncIOScheduler) ---
+# --- ارسال خودکار ---
 async def send_daily_messages(app):
     print("⏰ ارسال خودکار روزانه شروع شد...")
     for user_id in list(subscribed_users):
@@ -323,13 +323,12 @@ def start_scheduler(app):
     scheduler.start()
     print("⏰ زمان‌بند ارسال خودکار فعال شد (هر روز ساعت ۰۰:۰۰).")
 
-# --- اجرای اصلی (با asyncio.run) ---
+# --- اجرای اصلی با asyncio.run ---
 async def main_async():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("city", set_city))
     
-    # راه‌اندازی زمان‌بند
     start_scheduler(app)
     
     print("✅ ربات با API جدید قیمت‌ها روشن شد...")
