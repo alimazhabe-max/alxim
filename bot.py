@@ -11,8 +11,6 @@ import asyncio
 from hijri_converter import Gregorian
 from datetime import datetime
 import sqlite3
-import threading
-import json
 
 # ============================================================
 # 1. تنظیمات اولیه
@@ -21,20 +19,17 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("متغیر BOT_TOKEN در محیط تنظیم نشده است!")
 
-# لیست آیدی ادمین‌ها (برای پنل ادمین - قابلیت ۱۲)
 ADMIN_IDS = [int(id.strip()) for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]
-
 loop = asyncio.new_event_loop()
 
 # ============================================================
-# 2. دیتابیس (SQLite - قابلیت ۵)
+# 2. دیتابیس (SQLite)
 # ============================================================
 DB_PATH = "bot_data.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    # جدول کاربران
     c.execute('''CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
         first_name TEXT,
@@ -43,7 +38,6 @@ def init_db():
         subscribed INTEGER DEFAULT 1,
         register_date TEXT
     )''')
-    # جدول آمار
     c.execute('''CREATE TABLE IF NOT EXISTS stats (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT,
@@ -98,17 +92,17 @@ def get_all_users():
 def get_user_city(user_id):
     user = get_user(user_id)
     if user:
-        return user[2]  # city
+        return user[2]
     return "قم"
 
 def get_user_language(user_id):
     user = get_user(user_id)
     if user:
-        return user[3]  # language
+        return user[3]
     return "fa"
 
 # ============================================================
-# 3. چندزبانه (قابلیت ۸)
+# 3. چندزبانه
 # ============================================================
 TEXTS = {
     "fa": {
@@ -215,29 +209,7 @@ def get_text(user_id, key, **kwargs):
     return text.format(**kwargs) if kwargs else text
 
 # ============================================================
-# 4. ایموجی آب و هوا (قابلیت ۳)
-# ============================================================
-def get_weather_emoji(condition):
-    condition = condition.lower()
-    if "sunny" in condition or "آفتاب" in condition or "clear" in condition:
-        return "☀️"
-    elif "cloud" in condition or "ابری" in condition:
-        return "☁️"
-    elif "partly" in condition or "نیمه" in condition:
-        return "🌤️"
-    elif "rain" in condition or "باران" in condition:
-        return "🌧️"
-    elif "snow" in condition or "برف" in condition:
-        return "❄️"
-    elif "thunder" in condition or "رعد" in condition:
-        return "⛈️"
-    elif "mist" in condition or "مه" in condition:
-        return "🌫️"
-    else:
-        return "🌡️"
-
-# ============================================================
-# 5. توابع کمکی (APIها)
+# 4. توابع API
 # ============================================================
 def retry_request(url, timeout=5, retries=2):
     for i in range(retries):
@@ -280,7 +252,6 @@ def get_weather(city):
         return {
             "دما": f"{current['temp_C']}°C",
             "وضعیت": condition,
-            "وضعیت_ایموجی": get_weather_emoji(condition),
             "رطوبت": f"{current['humidity']}%",
         }
     except:
@@ -299,7 +270,7 @@ def get_hijri_date(g_date):
         return "نامشخص"
 
 # ============================================================
-# 6. دیکشنری رویدادهای قمری (کامل)
+# 5. دیکشنری کامل رویدادهای قمری (تمام ماه‌ها)
 # ============================================================
 hijri_events = {
     # محرم
@@ -534,7 +505,7 @@ def get_hijri_events(hijri_month, hijri_day):
     return hijri_events.get(key, ["هیچ مناسبت قمری خاصی ثبت نشده است."])
 
 # ============================================================
-# 7. مناسبت‌های شمسی
+# 6. مناسبت‌های شمسی
 # ============================================================
 events_cache = {}
 events_cache_time = {}
@@ -581,7 +552,7 @@ def get_events_for_jalali(year, month, day):
     return events
 
 # ============================================================
-# 8. پیام انگیزشی
+# 7. پیام انگیزشی
 # ============================================================
 motivation_messages = [
     "🌱 امروز روز جدیدی برای ساختن است. قدر لحظات را بدان!",
@@ -618,7 +589,7 @@ def get_motivation():
     return motivation_messages[index]
 
 # ============================================================
-# 9. ساخت پیام اصلی
+# 8. ساخت پیام اصلی
 # ============================================================
 def build_message(user_id, user_name, city):
     lang = get_user_language(user_id)
@@ -626,13 +597,11 @@ def build_message(user_id, user_name, city):
     today = jdatetime.date.today()
     persian_date = today.strftime("%A %d %B %Y")
     
-    # تاریخ قمری امروز
     hijri_today_obj = Gregorian(today.togregorian().year, today.togregorian().month, today.togregorian().day).to_hijri()
     hijri_today = get_hijri_date(today.togregorian())
     hijri_today_events = get_hijri_events(hijri_today_obj.month, hijri_today_obj.day)
     hijri_today_text = "\n".join([f"• {event}" for event in hijri_today_events])
     
-    # تاریخ قمری فردا
     tomorrow = today + timedelta(days=1)
     persian_tomorrow = tomorrow.strftime("%A %d %B %Y")
     hijri_tomorrow_obj = Gregorian(tomorrow.togregorian().year, tomorrow.togregorian().month, tomorrow.togregorian().day).to_hijri()
@@ -640,14 +609,12 @@ def build_message(user_id, user_name, city):
     hijri_tomorrow_events = get_hijri_events(hijri_tomorrow_obj.month, hijri_tomorrow_obj.day)
     hijri_tomorrow_text = "\n".join([f"• {event}" for event in hijri_tomorrow_events])
     
-    # مناسبت‌های شمسی
     today_events = get_events_for_jalali(today.year, today.month, today.day)
     today_events_text = "\n".join([f"• {event}" for event in today_events])
     
     tomorrow_events = get_events_for_jalali(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_events_text = "\n".join([f"• {event}" for event in tomorrow_events])
     
-    # اوقات شرعی
     prayer_times = get_prayer_times(city)
     prayer_text = ""
     if prayer_times:
@@ -656,17 +623,15 @@ def build_message(user_id, user_name, city):
     else:
         prayer_text = "⚠️ " + TEXTS[lang].get("no_events", "در دسترس نیست.")
     
-    # آب و هوا
     weather = get_weather(city)
     weather_text = ""
     if weather:
-        weather_text = f"🌡️ دما: {weather['دما']}\n{weather['وضعیت_ایموجی']} وضعیت: {weather['وضعیت']}\n💧 رطوبت: {weather['رطوبت']}"
+        weather_text = f"🌡️ دما: {weather['دما']}\n🌤️ وضعیت: {weather['وضعیت']}\n💧 رطوبت: {weather['رطوبت']}"
     else:
         weather_text = "⚠️ اطلاعات آب و هوا در دسترس نیست."
     
     motivation = get_motivation()
     
-    # ساخت پیام با کلیدهای چندزبانه
     message = (
         TEXTS[lang]["welcome"].format(name=user_name) + "\n\n"
         TEXTS[lang]["date"].format(persian=persian_date) + "\n"
@@ -683,10 +648,9 @@ def build_message(user_id, user_name, city):
     return message
 
 # ============================================================
-# 10. دکمه‌های شیشه‌ای (قابلیت ۱)
+# 9. دکمه‌ها
 # ============================================================
 def get_city_buttons(user_id):
-    lang = get_user_language(user_id)
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("تهران", callback_data="city_تهران"),
          InlineKeyboardButton("مشهد", callback_data="city_مشهد"),
@@ -694,9 +658,6 @@ def get_city_buttons(user_id):
         [InlineKeyboardButton("اصفهان", callback_data="city_اصفهان"),
          InlineKeyboardButton("شیراز", callback_data="city_شیراز"),
          InlineKeyboardButton("تبریز", callback_data="city_تبریز")],
-        [InlineKeyboardButton("کرج", callback_data="city_کرج"),
-         InlineKeyboardButton("یزد", callback_data="city_یزد"),
-         InlineKeyboardButton("اهواز", callback_data="city_اهواز")],
         [InlineKeyboardButton("🌍 زبان", callback_data="language_menu"),
          InlineKeyboardButton("📅 تقویم", callback_data="calendar_menu")]
     ])
@@ -709,12 +670,7 @@ def get_language_buttons():
          InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
     ])
 
-# ============================================================
-# 11. تقویم تعاملی (قابلیت ۶)
-# ============================================================
 def get_calendar_buttons(year, month, day, user_id):
-    lang = get_user_language(user_id)
-    # دکمه‌های تغییر ماه
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("◀️ ماه قبل", callback_data=f"cal_{year}_{month-1}_{day}"),
          InlineKeyboardButton("📅 امروز", callback_data="calendar_today"),
@@ -725,14 +681,11 @@ def get_calendar_buttons(year, month, day, user_id):
 def get_calendar_text(year, month, day, user_id):
     lang = get_user_language(user_id)
     try:
-        # ایجاد تاریخ شمسی برای ماه مورد نظر
         date_obj = jdatetime.date(year, month, 1)
         month_name = date_obj.strftime("%B")
-        # دریافت رویدادهای روزهای ماه
         events_text = ""
         for d in range(1, 32):
             try:
-                date_test = jdatetime.date(year, month, d)
                 events = get_events_for_jalali(year, month, d)
                 if events and events != ["هیچ مناسبت خاصی ثبت نشده است."]:
                     events_text += f"\n📅 {d} {month_name}:\n"
@@ -753,23 +706,16 @@ def get_calendar_text(year, month, day, user_id):
         return "❌ خطا در نمایش تقویم."
 
 # ============================================================
-# 12. دستورات و هندلرها
+# 10. دستورات
 # ============================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     first_name = user.first_name or "کاربر"
-    
-    # ذخیره در دیتابیس
     save_user(user_id, first_name)
-    
     city = get_user_city(user_id)
     message = build_message(user_id, first_name, city)
-    
-    await update.message.reply_text(
-        message,
-        reply_markup=get_city_buttons(user_id)
-    )
+    await update.message.reply_text(message, reply_markup=get_city_buttons(user_id))
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -782,14 +728,12 @@ async def city_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not args:
         await update.message.reply_text("❌ لطفاً نام شهر را وارد کن. مثال: `/city مشهد`")
         return
-    
     new_city = " ".join(args)
     test_weather = get_weather(new_city)
     if not test_weather:
         lang = get_user_language(user_id)
         await update.message.reply_text(TEXTS[lang]["city_not_found"].format(city=new_city))
         return
-    
     update_user_city(user_id, new_city)
     lang = get_user_language(user_id)
     await update.message.reply_text(TEXTS[lang]["city_changed"].format(city=new_city))
@@ -810,13 +754,11 @@ async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id)
     )
 
-# --- پنل ادمین (قابلیت ۱۰ و ۱۲) ---
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
         await update.message.reply_text("❌ این دستور فقط برای ادمین‌هاست.")
         return
-    
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM users")
@@ -824,22 +766,17 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     c.execute("SELECT COUNT(*) FROM users WHERE subscribed = 1")
     active = c.fetchone()[0]
     conn.close()
-    
     lang = get_user_language(user_id)
-    await update.message.reply_text(
-        TEXTS[lang]["stats"].format(total=total, active=active)
-    )
+    await update.message.reply_text(TEXTS[lang]["stats"].format(total=total, active=active))
 
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ADMIN_IDS:
         await update.message.reply_text("❌ این دستور فقط برای ادمین‌هاست.")
         return
-    
     if not context.args:
         await update.message.reply_text("❌ لطفاً پیام را وارد کن. مثال: `/broadcast سلام به همه`")
         return
-    
     message_text = " ".join(context.args)
     users = get_all_users()
     count = 0
@@ -850,11 +787,12 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(0.1)
         except:
             pass
-    
     lang = get_user_language(user_id)
     await update.message.reply_text(TEXTS[lang]["broadcast_sent"].format(count=count))
 
-# --- CallbackQueryHandler (برای دکمه‌ها) ---
+# ============================================================
+# 11. دکمه‌ها (CallbackQuery)
+# ============================================================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -862,7 +800,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     lang = get_user_language(user_id)
     
-    # تغییر شهر (قابلیت ۱)
     if data.startswith("city_"):
         city = data.replace("city_", "")
         test_weather = get_weather(city)
@@ -872,50 +809,34 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_city_buttons(user_id)
             )
             return
-        
         update_user_city(user_id, city)
         first_name = get_user(user_id)[1] if get_user(user_id) else "کاربر"
         message = build_message(user_id, first_name, city)
-        await query.edit_message_text(
-            message,
-            reply_markup=get_city_buttons(user_id)
-        )
+        await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
     
-    # تغییر زبان (قابلیت ۸)
     elif data.startswith("lang_"):
         lang_code = data.replace("lang_", "")
         update_user_language(user_id, lang_code)
         first_name = get_user(user_id)[1] if get_user(user_id) else "کاربر"
         city = get_user_city(user_id)
         message = build_message(user_id, first_name, city)
-        await query.edit_message_text(
-            message,
-            reply_markup=get_city_buttons(user_id)
-        )
+        await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
     
-    # منوی زبان
     elif data == "language_menu":
         await query.edit_message_text(
             "🌍 انتخاب زبان / Choose Language / اختر اللغة:",
             reply_markup=get_language_buttons()
         )
     
-    # منوی تقویم (قابلیت ۶)
     elif data == "calendar_menu":
         today = jdatetime.date.today()
         text = get_calendar_text(today.year, today.month, today.day, user_id)
-        await query.edit_message_text(
-            text,
-            reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id)
-        )
+        await query.edit_message_text(text, reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id))
     
     elif data == "calendar_today":
         today = jdatetime.date.today()
         text = get_calendar_text(today.year, today.month, today.day, user_id)
-        await query.edit_message_text(
-            text,
-            reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id)
-        )
+        await query.edit_message_text(text, reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id))
     
     elif data.startswith("cal_"):
         parts = data.split("_")
@@ -929,22 +850,16 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             month = 1
             year += 1
         text = get_calendar_text(year, month, day, user_id)
-        await query.edit_message_text(
-            text,
-            reply_markup=get_calendar_buttons(year, month, day, user_id)
-        )
+        await query.edit_message_text(text, reply_markup=get_calendar_buttons(year, month, day, user_id))
     
     elif data == "back_to_main":
         first_name = get_user(user_id)[1] if get_user(user_id) else "کاربر"
         city = get_user_city(user_id)
         message = build_message(user_id, first_name, city)
-        await query.edit_message_text(
-            message,
-            reply_markup=get_city_buttons(user_id)
-        )
+        await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
 
 # ============================================================
-# 13. ارسال خودکار روزانه
+# 12. ارسال خودکار
 # ============================================================
 def send_daily_messages(app):
     async def send():
@@ -973,12 +888,11 @@ def start_scheduler(app):
     print("⏰ زمان‌بند ارسال خودکار فعال شد.")
 
 # ============================================================
-# 14. اجرای اصلی
+# 13. اجرای اصلی
 # ============================================================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
     
-    # ثبت دستورات
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("city", city_command))
@@ -987,10 +901,8 @@ def main():
     app.add_handler(CommandHandler("stats", stats_command))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
-    # ثبت دکمه‌ها
     app.add_handler(CallbackQueryHandler(button_handler))
     
-    # راه‌اندازی زمان‌بند
     start_scheduler(app)
     
     print("✅ ربات با تمام قابلیت‌های جدید روشن شد...")
