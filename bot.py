@@ -631,22 +631,23 @@ def build_message(user_id, user_name, city):
     else:
         weather_text = "⚠️ اطلاعات آب و هوا در دسترس نیست."
     
-    motivation = get_motivation()
-    
-    message = (
-        TEXTS[lang]["welcome"].format(name=user_name) + "\n\n"
-        TEXTS[lang]["date"].format(persian=persian_date) + "\n"
-        TEXTS[lang]["hijri"].format(hijri=hijri_today) + "\n"
-        TEXTS[lang]["hijri_events_today"] + "\n" + hijri_today_text + "\n\n"
-        TEXTS[lang]["hijri_events_tomorrow"] + "\n" + hijri_tomorrow_text + "\n\n"
-        TEXTS[lang]["shamsi_events_today"] + "\n" + today_events_text + "\n\n"
-        TEXTS[lang]["shamsi_events_tomorrow"] + "\n" + tomorrow_events_text + "\n\n"
-        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n"
-        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n"
-        TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n"
+        motivation = get_motivation()
+     
+        message = (
+        TEXTS[lang]["welcome"].format(name=user_name) + "\n\n" +
+        TEXTS[lang]["date"].format(persian=persian_date) + "\n" +
+        TEXTS[lang]["hijri"].format(hijri=hijri_today) + "\n" +
+        TEXTS[lang]["hijri_events_today"] + "\n" + hijri_today_text + "\n\n" +
+        TEXTS[lang]["hijri_events_tomorrow"] + "\n" + hijri_tomorrow_text + "\n\n" +
+        TEXTS[lang]["shamsi_events_today"] + "\n" + today_events_text + "\n\n" +
+        TEXTS[lang]["shamsi_events_tomorrow"] + "\n" + tomorrow_events_text + "\n\n" +
+        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n" +
+        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n" +
+        TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n" +
         TEXTS[lang]["change_city"]
-        return message
+    )
 
+    return message
 # ============================================================
 # 9. دکمه‌ها
 # ============================================================
