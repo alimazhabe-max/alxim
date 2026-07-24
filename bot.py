@@ -4,12 +4,13 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import jdatetime
 from jdatetime import timedelta
 import os
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import random
 import asyncio
 from hijri_converter import Gregorian
 from datetime import datetime
+import threading
 
 # --- تنظیمات اولیه ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -19,6 +20,7 @@ if not BOT_TOKEN:
 user_cities = {}
 subscribed_users = set()
 scheduler = None
+loop = asyncio.new_event_loop()  # یک event loop جداگانه برای ارسال خودکار
 
 # --- لیست پیام‌های انگیزشی ---
 motivation_messages = [
@@ -292,29 +294,34 @@ async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"برای مشاهده اطلاعات، دوباره `/start` رو بفرست."
     )
 
-# --- ارسال خودکار ---
-async def send_daily_messages(app):
-    print("⏰ ارسال خودکار روزانه شروع شد...")
-    for user_id in list(subscribed_users):
-        try:
-            city = get_user_city(user_id)
-            user_name = "کاربر گرامی"
+# --- ارسال خودکار (با BackgroundScheduler در ترد جداگانه) ---
+def send_daily_messages(app):
+    # این تابع در یک ترد جداگانه اجرا می‌شود
+    async def send():
+        print("⏰ ارسال خودکار روزانه شروع شد...")
+        for user_id in list(subscribed_users):
             try:
-                chat = await app.bot.get_chat(user_id)
-                user_name = chat.first_name or "کاربر گرامی"
-            except:
-                pass
-            message = build_message(user_name, city)
-            await app.bot.send_message(chat_id=user_id, text=message)
-            print(f"✅ پیام به کاربر {user_id} ارسال شد.")
-            await asyncio.sleep(0.5)
-        except Exception as e:
-            print(f"❌ خطا در ارسال به کاربر {user_id}: {e}")
-    print("🏁 ارسال خودکار روزانه پایان یافت.")
+                city = get_user_city(user_id)
+                user_name = "کاربر گرامی"
+                try:
+                    chat = await app.bot.get_chat(user_id)
+                    user_name = chat.first_name or "کاربر گرامی"
+                except:
+                    pass
+                message = build_message(user_name, city)
+                await app.bot.send_message(chat_id=user_id, text=message)
+                print(f"✅ پیام به کاربر {user_id} ارسال شد.")
+                await asyncio.sleep(0.5)
+            except Exception as e:
+                print(f"❌ خطا در ارسال به کاربر {user_id}: {e}")
+        print("🏁 ارسال خودکار روزانه پایان یافت.")
+    
+    # اجرای تابع async در event loop جداگانه
+    asyncio.run_coroutine_threadsafe(send(), loop)
 
 def start_scheduler(app):
     global scheduler
-    scheduler = AsyncIOScheduler(timezone="Asia/Tehran")
+    scheduler = BackgroundScheduler(timezone="Asia/Tehran")
     scheduler.add_job(
         send_daily_messages,
         CronTrigger(hour=0, minute=0, timezone="Asia/Tehran"),
@@ -323,8 +330,8 @@ def start_scheduler(app):
     scheduler.start()
     print("⏰ زمان‌بند ارسال خودکار فعال شد (هر روز ساعت ۰۰:۰۰).")
 
-# --- اجرای اصلی با asyncio.run ---
-async def main_async():
+# --- اجرای اصلی ---
+def main():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("city", set_city))
@@ -332,10 +339,7 @@ async def main_async():
     start_scheduler(app)
     
     print("✅ ربات با API جدید قیمت‌ها روشن شد...")
-    await app.run_polling()
-
-def main():
-    asyncio.run(main_async())
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
