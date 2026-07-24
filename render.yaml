@@ -1,0 +1,13 @@
+services:
+  - type: worker
+    name: telegram-prayer-bot
+    runtime: python
+    repo: https://github.com/username/repo-name  # آدرس ریپازیتوری خودت رو بذار
+    plan: free
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEATHER_API_KEY
+        sync: false
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
