@@ -1,24 +1,43 @@
-import requests
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-import jdatetime
 import os
+import sys
 
-# --- گرفتن توکن از محیط (Render) ---
+print("1️⃣ شروع شد...")  # اولین خط
+
+try:
+    import requests
+    print("2️⃣ requests نصب شد")
+except Exception as e:
+    print(f"❌ خطا در import requests: {e}")
+    sys.exit(1)
+
+try:
+    from telegram import Update
+    from telegram.ext import Application, CommandHandler, ContextTypes
+    print("3️⃣ telegram نصب شد")
+except Exception as e:
+    print(f"❌ خطا در import telegram: {e}")
+    sys.exit(1)
+
+try:
+    import jdatetime
+    print("4️⃣ jdatetime نصب شد")
+except Exception as e:
+    print(f"❌ خطا در import jdatetime: {e}")
+    sys.exit(1)
+
+# --- گرفتن توکن از محیط ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+print(f"5️⃣ BOT_TOKEN: {'✅ پیدا شد' if BOT_TOKEN else '❌ پیدا نشد!'}")
 
-# --- اگر توکن وجود نداشت، خطا بده ---
 if not BOT_TOKEN:
-    raise ValueError("متغیر BOT_TOKEN در محیط تنظیم نشده است!")
+    print("❌ متغیر BOT_TOKEN در محیط تنظیم نشده است!")
+    sys.exit(1)
 
-# --- شهر و کشور ---
+# --- بقیه کد ---
 CITY = "Tehran"
 COUNTRY = "Iran"
-
-# --- آدرس اوقات شرعی ---
 PRAYER_API_URL = f"https://api.aladhan.com/v1/timingsByCity?city={CITY}&country={COUNTRY}&method=8"
 
-# --- تابع دریافت اوقات شرعی ---
 def get_prayer_times():
     try:
         response = requests.get(PRAYER_API_URL, timeout=10)
@@ -36,7 +55,6 @@ def get_prayer_times():
         print(f"خطا در دریافت اوقات شرعی: {e}")
         return None
 
-# --- تابع دریافت آب و هوا (بدون کلید، با wttr.in) ---
 def get_weather():
     try:
         response = requests.get(f"https://wttr.in/{CITY}?format=j1", timeout=10)
@@ -51,13 +69,11 @@ def get_weather():
         print(f"خطا در دریافت آب و هوا: {e}")
         return None
 
-# --- تابع دریافت تاریخ شمسی ---
 def get_persian_date():
     today = jdatetime.date.today()
     return today.strftime("%A %d %B %Y")
 
-# --- دستور /start ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update, context):
     user = update.effective_user
     persian_date = get_persian_date()
     
@@ -85,12 +101,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(message)
 
-# --- اجرای اصلی ---
 def main():
+    print("6️⃣ در حال ساخت اپلیکیشن...")
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     print("✅ ربات روشن شد و منتظر پیام‌های شماست...")
     app.run_polling()
 
 if __name__ == "__main__":
+    print("🚀 در حال اجرا...")
     main()
