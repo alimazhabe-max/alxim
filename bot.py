@@ -1,4 +1,3 @@
-# نسخه نهایی - بدون خطا
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
@@ -506,7 +505,7 @@ def get_hijri_events(hijri_month, hijri_day):
     return hijri_events.get(key, ["هیچ مناسبت قمری خاصی ثبت نشده است."])
 
 # ============================================================
-# 6. مناسبت‌های شمسی (با کش)
+# 6. مناسبت‌های شمسی
 # ============================================================
 events_cache = {}
 events_cache_time = {}
@@ -590,7 +589,7 @@ def get_motivation():
     return motivation_messages[index]
 
 # ============================================================
-# 8. ساخت پیام اصلی (کاملاً اصلاح‌شده)
+# 8. ساخت پیام اصلی
 # ============================================================
 def build_message(user_id, user_name, city):
     lang = get_user_language(user_id)
@@ -860,7 +859,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
 
 # ============================================================
-# 12. ارسال خودکار روزانه
+# 12. ارسال خودکار
 # ============================================================
 def send_daily_messages(app):
     async def send():
