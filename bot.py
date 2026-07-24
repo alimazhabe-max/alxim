@@ -1,34 +1,61 @@
 import os
+import asyncio
 import datetime
-import pytz
-import sqlite3
 import logging
 import threading
+
+import pytz
+import psycopg2
 import requests
+
 from flask import Flask
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup
+)
+
 from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
-    CallbackQueryHandler,
+    CallbackQueryHandler
 )
 
-# ====================== تنظیمات ======================
+# ==========================================================
+# LOGGING
+# ==========================================================
+
 logging.basicConfig(
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    format="%(asctime)s | %(levelname)s | %(message)s",
     level=logging.INFO
 )
+
 logger = logging.getLogger(__name__)
+
+# ==========================================================
+# ENV VARIABLES
+# ==========================================================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEATHER_KEY = os.getenv("WEATHER_KEY")
-DB_PATH = "data.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+
+POSTER_URL = os.getenv(
+    "POSTER_URL",
+    "https://images.unsplash.com/photo-1519817650390-64a93db511aa"
+)
+
+PORT = int(os.getenv("PORT", 8080))
+
 tehran_tz = pytz.timezone("Asia/Tehran")
 
-POSTER_URL = "https://example.com/qom_poster.jpg"  # لینک پوستر مذهبی
-ADMIN_ID = 123456789  # اینجا آیدی خودت را بگذار
+# ==========================================================
+# CACHE
+# ==========================================================
 
 CACHE = {
     "prayer": {},
@@ -36,60 +63,204 @@ CACHE = {
     "date": {},
     "hijri": {}
 }
-CACHE_TTL_SECONDS = 600  # 10 دقیقه
 
-# ====================== دیتابیس ======================
+CACHE_TTL_SECONDS = 600
+
+# ==========================================================
+# DATABASE
+# ==========================================================
+
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
+
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS subscribers (
-            chat_id INTEGER PRIMARY KEY,
-            city TEXT DEFAULT 'Qom',
-            is_vip INTEGER DEFAULT 0
-        )
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS subscribers(
+        chat_id BIGINT PRIMARY KEY,
+        city TEXT DEFAULT 'Qom',
+        is_vip BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT NOW()
+    )
     """)
+
     conn.commit()
+    cur.close()
     conn.close()
+
+    logger.info("Database initialized")
+
 
 def add_subscriber(chat_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "INSERT OR IGNORE INTO subscribers (chat_id) VALUES (?)",
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO subscribers(chat_id)
+        VALUES(%s)
+        ON CONFLICT(chat_id)
+        DO NOTHING
+        """,
         (chat_id,)
     )
+
     conn.commit()
+
+    cur.close()
     conn.close()
 
-def set_city(chat_id, city):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "UPDATE subscribers SET city = ? WHERE chat_id = ?",
-        (city, chat_id)
-    )
-    conn.commit()
-    conn.close()
-
-def set_vip(chat_id, is_vip=True):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute(
-        "UPDATE subscribers SET is_vip = ? WHERE chat_id = ?",
-        (1 if is_vip else 0, chat_id)
-    )
-    conn.commit()
-    conn.close()
-
-def get_subscribers():
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT chat_id, city, is_vip FROM subscribers").fetchall()
-    conn.close()
-    return [{"chat_id": r[0], "city": r[1], "is_vip": bool(r[2])} for r in rows]
 
 def remove_subscriber(chat_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("DELETE FROM subscribers WHERE chat_id = ?", (chat_id,))
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        "DELETE FROM subscribers WHERE chat_id=%s",
+        (chat_id,)
+    )
+
     conn.commit()
+
+    cur.close()
     conn.close()
 
+
+def set_city(chat_id, city):
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        UPDATE subscribers
+        SET city=%s
+        WHERE chat_id=%s
+        """,
+        (city, chat_id)
+    )
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+
+def set_vip(chat_id, is_vip=True):
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        UPDATE subscribers
+        SET is_vip=%s
+        WHERE chat_id=%s
+        """,
+        (is_vip, chat_id)
+    )
+
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+
+def get_subscribers():
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT
+        chat_id,
+        city,
+        is_vip
+    FROM subscribers
+    """)
+
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return [
+        {
+            "chat_id": row[0],
+            "city": row[1],
+            "is_vip": row[2]
+        }
+        for row in rows
+    ]
+
+
+def get_stats():
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT COUNT(*) FROM subscribers"
+    )
+
+    total_users = cur.fetchone()[0]
+
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM subscribers
+        WHERE is_vip=TRUE
+        """
+    )
+
+    vip_users = cur.fetchone()[0]
+
+    cur.close()
+    conn.close()
+
+    return {
+        "total": total_users,
+        "vip": vip_users
+    }
+
+# ==========================================================
+# CACHE HELPERS
+# ==========================================================
+
+def cache_get(section, key):
+
+    now = datetime.datetime.now().timestamp()
+
+    item = CACHE.get(section, {}).get(key)
+
+    if not item:
+        return None
+
+    value, ts = item
+
+    if now - ts > CACHE_TTL_SECONDS:
+        return None
+
+    return value
+
+
+def cache_set(section, key, value):
+
+    now = datetime.datetime.now().timestamp()
+
+    if section not in CACHE:
+        CACHE[section] = {}
+
+    CACHE[section][key] = (
+        value,
+        now
+    )
 # ====================== کش و API ======================
 def cache_get(section, key):
     now = datetime.datetime.now().timestamp()
