@@ -644,8 +644,7 @@ def build_message(user_id, user_name, city):
         TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n"
         TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n"
         TEXTS[lang]["change_city"]
-    )
-    return message
+        return message
 
 # ============================================================
 # 9. دکمه‌ها
