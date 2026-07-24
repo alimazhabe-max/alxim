@@ -4,13 +4,12 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import jdatetime
 from jdatetime import timedelta
 import os
-from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.schedulers.asyncio import AsyncIOScheduler  # تغییر مهم
 from apscheduler.triggers.cron import CronTrigger
 import random
 import asyncio
 from hijri_converter import Gregorian
-from functools import lru_cache
-from datetime import datetime, timedelta as dt_timedelta
+from datetime import datetime
 
 # --- تنظیمات اولیه ---
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -19,6 +18,7 @@ if not BOT_TOKEN:
 
 user_cities = {}
 subscribed_users = set()
+scheduler = None  # برای نگهداری شیء زمان‌بند
 
 # --- لیست پیام‌های انگیزشی ---
 motivation_messages = [
@@ -55,7 +55,7 @@ def get_motivation():
     last_motivation_index = index
     return motivation_messages[index]
 
-# --- توابع با Retry و Cache ---
+# --- توابع با Retry ---
 def retry_request(url, timeout=5, retries=2):
     for i in range(retries):
         try:
@@ -104,20 +104,15 @@ def get_weather(city):
     except:
         return None
 
-# --- قیمت طلا و دلار با سرویس جدید (Nerkh.io) ---
+# --- قیمت طلا و دلار با BRSAPI (رایگان، بدون کلید) ---
 def get_gold_usd_prices():
     try:
-        # استفاده از سرویس BRSAPI (رایگان، بدون نیاز به کلید)
         url = "https://brsapi.ir/free-api/gold-currency"
         response = retry_request(url, timeout=5)
         if response:
             data = response.json()
-            
-            # دریافت قیمت طلا (۱۸ عیار)
             gold_price = data.get('gold', {}).get('18', {}).get('price')
-            # دریافت قیمت دلار
             usd_price = data.get('currency', {}).get('usd', {}).get('price')
-            
             if gold_price and usd_price:
                 return {
                     "طلا (۱۸ عیار)": int(gold_price),
@@ -126,7 +121,7 @@ def get_gold_usd_prices():
     except Exception as e:
         print(f"خطا در دریافت قیمت از BRSAPI: {e}")
     
-    # --- سرویس پشتیبان: Nerkh V2 ---
+    # سرویس پشتیبان (در صورت نیاز)
     try:
         url = "https://api.nerkh.io/v2/prices/json"
         response = retry_request(url, timeout=3)
@@ -144,16 +139,6 @@ def get_gold_usd_prices():
                     "طلا (۱۸ عیار)": int(gold_price),
                     "دلار": int(usd_price)
                 }
-    except Exception as e:
-        print(f"خطا در دریافت قیمت از Nerkh V2: {e}")
-    
-    return None
-    
-    # --- سرویس پشتیبان: Navasan (نیاز به کلید) ---
-    try:
-        # این سرویس نیاز به دریافت کلید از @navasan_contact_bot دارد
-        # فعلاً غیرفعال، در صورت نیاز فعالش کن
-        pass
     except:
         pass
     
@@ -172,55 +157,38 @@ def get_hijri_date(g_date):
     except:
         return "نامشخص"
 
-# --- کش کردن مناسبت‌ها ---
+# --- مناسبت‌ها (با کش) ---
 events_cache = {}
 events_cache_time = {}
 
 def get_events_for_jalali(year, month, day):
     cache_key = f"{year}-{month}-{day}"
-    
     if cache_key in events_cache:
         cache_time = events_cache_time.get(cache_key)
         if cache_time and (datetime.now() - cache_time).seconds < 86400:
             return events_cache[cache_key]
     
     try:
-        try:
-            from rokh import get_day_events, DateSystem
-            events_data = get_day_events(year, month, day, system=DateSystem.JALALI)
-            events = []
-            if events_data:
-                if isinstance(events_data, list):
-                    for event in events_data:
-                        if isinstance(event, dict) and 'description' in event:
-                            events.append(event['description'])
-                elif isinstance(events_data, dict) and 'events' in events_data:
-                    for event in events_data['events']:
-                        if 'description' in event:
-                            events.append(event['description'])
-            if events:
-                events_cache[cache_key] = events
-                events_cache_time[cache_key] = datetime.now()
-                return events
-        except:
-            pass
-        
-        url = f"https://www.time.ir/fa/event/list/0/{year}/{month}/{day}"
-        response = retry_request(url, timeout=3)
-        if response:
-            data = response.json()
-            events = []
-            if 'events' in data:
-                for item in data['events']:
-                    if item.get('type') == 'jalali' or 'description' in item:
-                        events.append(item.get('description', item.get('title', 'رویداد')))
-            if events:
-                events_cache[cache_key] = events
-                events_cache_time[cache_key] = datetime.now()
-                return events
+        from rokh import get_day_events, DateSystem
+        events_data = get_day_events(year, month, day, system=DateSystem.JALALI)
+        events = []
+        if events_data:
+            if isinstance(events_data, list):
+                for event in events_data:
+                    if isinstance(event, dict) and 'description' in event:
+                        events.append(event['description'])
+            elif isinstance(events_data, dict) and 'events' in events_data:
+                for event in events_data['events']:
+                    if 'description' in event:
+                        events.append(event['description'])
+        if events:
+            events_cache[cache_key] = events
+            events_cache_time[cache_key] = datetime.now()
+            return events
     except:
         pass
     
+    # Fallback
     fallback_events = {
         "1-1": ["جشن نوروز", "سال نو"],
         "12-29": ["شهادت امام علی (ع)"],
@@ -271,7 +239,7 @@ def build_message(user_name, city):
     if prices:
         prices_text = f"💰 طلا (۱۸ عیار): {prices['طلا (۱۸ عیار)']:,} تومان\n💵 دلار: {prices['دلار']:,} تومان"
     else:
-        prices_text = "⚠️ قیمت طلا و دلار در دسترس نیست.\n(سرویس موقتاً در دسترس نیست، لطفاً بعداً امتحان کنید)"
+        prices_text = "⚠️ قیمت طلا و دلار در دسترس نیست."
     
     motivation = get_motivation()
     
@@ -324,7 +292,7 @@ async def set_city(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"برای مشاهده اطلاعات، دوباره `/start` رو بفرست."
     )
 
-# --- ارسال خودکار ---
+# --- ارسال خودکار (با AsyncIOScheduler) ---
 async def send_daily_messages(app):
     print("⏰ ارسال خودکار روزانه شروع شد...")
     for user_id in list(subscribed_users):
@@ -345,21 +313,30 @@ async def send_daily_messages(app):
     print("🏁 ارسال خودکار روزانه پایان یافت.")
 
 def start_scheduler(app):
-    scheduler = BackgroundScheduler()
+    global scheduler
+    scheduler = AsyncIOScheduler(timezone="Asia/Tehran")
     scheduler.add_job(
-        lambda: asyncio.create_task(send_daily_messages(app)),
-        CronTrigger(hour=0, minute=0, timezone="Asia/Tehran")
+        send_daily_messages,
+        CronTrigger(hour=0, minute=0, timezone="Asia/Tehran"),
+        args=[app]
     )
     scheduler.start()
-    print("⏰ زمان‌بند ارسال خودکار فعال شد.")
+    print("⏰ زمان‌بند ارسال خودکار فعال شد (هر روز ساعت ۰۰:۰۰).")
 
-def main():
+# --- اجرای اصلی (با asyncio.run) ---
+async def main_async():
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("city", set_city))
+    
+    # راه‌اندازی زمان‌بند
     start_scheduler(app)
-    print("✅ ربات بهینه‌شده با API جدید روشن شد...")
-    app.run_polling()
+    
+    print("✅ ربات با API جدید قیمت‌ها روشن شد...")
+    await app.run_polling()
+
+def main():
+    asyncio.run(main_async())
 
 if __name__ == "__main__":
     main()
