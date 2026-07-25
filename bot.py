@@ -11,6 +11,7 @@ import asyncio
 from hijri_converter import Gregorian
 from datetime import datetime
 import sqlite3
+import pytz
 
 # ============================================================
 # 1. تنظیمات اولیه
@@ -21,6 +22,11 @@ if not BOT_TOKEN:
 
 ADMIN_IDS = [int(id.strip()) for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]
 loop = asyncio.new_event_loop()
+
+def get_today_tehran():
+    tehran_tz = pytz.timezone('Asia/Tehran')
+    now = datetime.now(tehran_tz)
+    return jdatetime.datetime.fromgregorian(datetime=now).date()
 
 # ============================================================
 # 2. دیتابیس (SQLite)
@@ -107,12 +113,6 @@ def get_user_language(user_id):
 TEXTS = {
     "fa": {
         "welcome": "🌟 سلام {name} عزیز! 🌟",
-        "date": "📅 **امروز (شمسی):** {persian}",
-        "hijri": "🌙 **امروز (قمری):** {hijri}",
-        "hijri_events_today": "📌 **مناسبت‌های قمری امروز:**",
-        "hijri_events_tomorrow": "📌 **مناسبت‌های قمری فردا:**",
-        "shamsi_events_today": "📌 **مناسبت‌های شمسی امروز:**",
-        "shamsi_events_tomorrow": "🔮 **مناسبت‌های شمسی فردا:**",
         "prayer": "⏰ **اوقات شرعی امروز ({city}):**",
         "weather": "🌦️ **آب و هوای {city}:**",
         "motivation": "💖 **پیام انگیزشی روز:**",
@@ -139,12 +139,6 @@ TEXTS = {
     },
     "en": {
         "welcome": "🌟 Hello dear {name}! 🌟",
-        "date": "📅 **Today (Solar):** {persian}",
-        "hijri": "🌙 **Today (Lunar):** {hijri}",
-        "hijri_events_today": "📌 **Today's Lunar Events:**",
-        "hijri_events_tomorrow": "📌 **Tomorrow's Lunar Events:**",
-        "shamsi_events_today": "📌 **Today's Solar Events:**",
-        "shamsi_events_tomorrow": "🔮 **Tomorrow's Solar Events:**",
         "prayer": "⏰ **Prayer Times ({city}):**",
         "weather": "🌦️ **Weather in {city}:**",
         "motivation": "💖 **Daily Motivation:**",
@@ -171,12 +165,6 @@ TEXTS = {
     },
     "ar": {
         "welcome": "🌟 مرحباً عزيزي {name}! 🌟",
-        "date": "📅 **اليوم (شمسي):** {persian}",
-        "hijri": "🌙 **اليوم (قمري):** {hijri}",
-        "hijri_events_today": "📌 **مناسبات قمرية اليوم:**",
-        "hijri_events_tomorrow": "📌 **مناسبات قمرية غداً:**",
-        "shamsi_events_today": "📌 **مناسبات شمسية اليوم:**",
-        "shamsi_events_tomorrow": "🔮 **مناسبات شمسية غداً:**",
         "prayer": "⏰ **أوقات الصلاة اليوم ({city}):**",
         "weather": "🌦️ **الطقس في {city}:**",
         "motivation": "💖 **رسالة تحفيزية اليوم:**",
@@ -259,21 +247,26 @@ def get_weather(city):
 
 def get_hijri_date(g_date):
     try:
-        # یک روز قبل را محاسبه کن
-        from datetime import timedelta
-        g_date_adjusted = g_date - timedelta(days=1)
+        from datetime import timedelta as dt_timedelta
+        g_date_adjusted = g_date - dt_timedelta(days=1)
         hijri = Gregorian(g_date_adjusted.year, g_date_adjusted.month, g_date_adjusted.day).to_hijri()
         hijri_months = {
             1: "محرم", 2: "صفر", 3: "ربیع‌الاول", 4: "ربیع‌الثانی",
             5: "جمادی‌الاول", 6: "جمادی‌الثانی", 7: "رجب", 8: "شعبان",
             9: "رمضان", 10: "شوال", 11: "ذی‌قعده", 12: "ذی‌الحجه"
         }
-        return f"{hijri.day} {hijri_months[hijri.month]} {hijri.year}"
+        return {
+            "day": hijri.day,
+            "month": hijri.month,
+            "month_name": hijri_months[hijri.month],
+            "year": hijri.year,
+            "full": f"{hijri.day} {hijri_months[hijri.month]} {hijri.year}"
+        }
     except:
-        return "نامشخص"
+        return {"day": 0, "month": 0, "month_name": "نامشخص", "year": 0, "full": "نامشخص"}
 
 # ============================================================
-# 5. دیکشنری کامل رویدادهای قمری (تمام ماه‌ها)
+# 5. دیکشنری کامل رویدادهای قمری (کامل - تمام روزها)
 # ============================================================
 hijri_events = {
     # محرم
@@ -508,51 +501,159 @@ def get_hijri_events(hijri_month, hijri_day):
     return hijri_events.get(key, ["هیچ مناسبت قمری خاصی ثبت نشده است."])
 
 # ============================================================
-# 6. مناسبت‌های شمسی (با کش)
+# 6. دیکشنری کامل مناسبت‌های شمسی (فقط ملی و جهانی)
 # ============================================================
-events_cache = {}
-events_cache_time = {}
+shamsi_events = {
+    "1-1": ["جشن نوروز", "سال نو"],
+    "1-2": ["عید نوروز"],
+    "1-3": ["عید نوروز"],
+    "1-4": ["عید نوروز"],
+    "1-6": ["روز امید", "روز شادباش نویسی", "زادروز آشو زرتشت"],
+    "1-7": ["روز جهانی تئاتر"],
+    "1-10": ["جشن آبانگاه"],
+    "1-12": ["روز جمهوری اسلامی"],
+    "1-13": ["جشن سیزده به در"],
+    "1-17": ["سروش روز", "جشن سروشگان"],
+    "1-18": ["روز جهانی بهداشت"],
+    "1-19": ["فروردین روز", "جشن فروردینگان"],
+    "1-23": ["روز دندانپزشک"],
+    "1-25": ["روز بزرگداشت عطار نیشابوری"],
+    "1-29": ["روز ارتش جمهوری اسلامی ایران"],
+    "1-30": ["روز علوم آزمایشگاهی", "زاد روز حکیم سید اسماعیل جرجانی"],
+    "2-1": ["روز بزرگداشت سعدی"],
+    "2-2": ["جشن گیاه آوری", "روز زمین"],
+    "2-3": ["روز بزرگداشت شیخ بهایی", "روز ملی کارآفرینی"],
+    "2-9": ["روز شوراها", "روز جهانی روانشناس و مشاور"],
+    "2-10": ["جشن چهلم نوروز", "روز ملی خلیج فارس"],
+    "2-11": ["روز جهانی کارگر"],
+    "2-12": ["شهادت استاد مرتضی مطهری", "روز معلم"],
+    "2-15": ["جشن میانه بهار", "جشن بهاربد", "روز شیراز", "روز جهانی ماما"],
+    "2-17": ["روز اسناد ملی و میراث مکتوب"],
+    "2-18": ["روز جهانی صلیب سرخ و هلال احمر"],
+    "2-25": ["روز بزرگداشت فردوسی"],
+    "2-27": ["روز ارتباطات و روابط عمومی"],
+    "2-28": ["روز بزرگداشت حکیم عمر خیام", "روز جهانی موزه و میراث فرهنگی"],
+    "3-1": ["روز بهره وری و بهینه سازی مصرف", "روز بزرگداشت ملاصدرا"],
+    "3-3": ["فتح خرمشهر", "روز مقاومت، ایثار و پیروزی"],
+    "3-4": ["روز دزفول", "روز مقاومت و پایداری"],
+    "3-6": ["خرداد روز", "جشن خردادگان"],
+    "3-14": ["رحلت حضرت امام خمینی"],
+    "3-15": ["قیام 15 خرداد", "روز جهانی محیط زیست"],
+    "3-20": ["روز جهانی صنایع دستی"],
+    "3-22": ["روز جهانی مبارزه با کار کودکان"],
+    "3-24": ["روز جهانی اهدای خون"],
+    "3-25": ["روز ملی گل و گیاه"],
+    "3-27": ["روز جهاد کشاورزی", "روز جهانی بیابان زدایی"],
+    "4-1": ["جشن آب پاشونک", "جشن آغاز تابستان", "روز اصناف"],
+    "4-5": ["روز جهانی مبارزه با مواد مخدر"],
+    "4-7": ["انفجار دفتر حزب جمهوری اسلامی", "شهادت دکتر بهشتی", "روز قوه قضاییه"],
+    "4-8": ["روز مبارزه با سلاح های شیمیایی و میکروبی"],
+    "4-10": ["روز صنعت و معدن"],
+    "4-13": ["تیر روز", "جشن تیرگان"],
+    "4-14": ["روز قلم"],
+    "4-15": ["جشن خام خواری"],
+    "4-25": ["روز بهزیستی و تامین اجتماعی"],
+    "4-27": ["اعلام پذیرش قطعنامه 598 شورای امنیت از سوی ایران"],
+    "5-6": ["روز ترویج آموزش های فنی و حرفه ای"],
+    "5-7": ["مرداد روز", "جشن مردادگان"],
+    "5-8": ["روز بزرگداشت شیخ شهاب الدین سهروردی"],
+    "5-10": ["جشن چله تابستان", "آغاز هفته جهانی شیردهی"],
+    "5-14": ["صدور فرمان مشروطیت"],
+    "5-17": ["روز خبرنگار"],
+    "5-22": ["روز جهانی چپ دست ها"],
+    "5-26": ["سالروز ورود آزادگان سرافراز به وطن"],
+    "5-28": ["سالروز وقایع 28 مرداد", "سالروز فاجعه سینما رکس آبادان", "روز جهانی عکاسی"],
+    "6-1": ["روز بزرگداشت ابوعلی سینا", "روز پزشک"],
+    "6-2": ["آغاز هفته دولت"],
+    "6-4": ["زادروز داراب (کوروش)", "شهریور روز", "جشن شهریورگان", "روز کارمند"],
+    "6-5": ["روز بزرگداشت محمدبن زکریای رازی", "روز داروساز"],
+    "6-8": ["انفجار در دفتر نخست‌وزیری", "روز مبارزه با تروریسم"],
+    "6-11": ["روز صنعت چاپ"],
+    "6-13": ["روز بزرگداشت ابوریحان بیرونی", "روز تعاون"],
+    "6-17": ["قیام 17 شهریور"],
+    "6-19": ["درگذشت آیت الله سید محمود طالقانی", "روز جهانی پیشگیری از خودکشی"],
+    "6-20": ["حمله به برج‌های دوقلوی مرکز تجارت جهانی"],
+    "6-21": ["روز سینما", "روز گرامیداشت برنامه نویسان"],
+    "6-27": ["روز شعر و ادب پارسی", "روز بزرگداشت استاد شهریار"],
+    "6-30": ["روز گفتگوی تمدنها", "روز جهانی صلح"],
+    "6-31": ["آغاز هفته دفاع مقدس"],
+    "7-1": ["آغاز حمله مغول به ایران"],
+    "7-5": ["روز جهانی جهانگردی"],
+    "7-7": ["روز آتش نشانی و ایمنی", "سقوط هواپیمای حامل فرماندهان جنگ"],
+    "7-8": ["روز بزرگداشت مولوی", "روز جهانی ناشنوایان", "روز جهانی ترجمه و مترجم"],
+    "7-9": ["روز جهانی سالمندان"],
+    "7-10": ["مهر روز", "جشن مهرگان"],
+    "7-13": ["روز نیروی انتظامی", "روز جهانی معلم"],
+    "7-14": ["روز دامپزشکی"],
+    "7-16": ["روز ملی کودک"],
+    "7-17": ["روز جهانی پست"],
+    "7-18": ["روز جهانی مبارزه با حکم اعدام"],
+    "7-19": ["روز جهانی دختر"],
+    "7-20": ["روز بزرگداشت حافظ"],
+    "7-21": ["جشن پیروزی کاوه و فریدون"],
+    "7-22": ["روز جهانی استاندارد"],
+    "7-23": ["روز جهانی عصای سفید"],
+    "7-24": ["روز جهانی غذا"],
+    "7-25": ["روز جهانی ریشه کنی فقر"],
+    "7-26": ["روز تربیت بدنی و ورزش"],
+    "7-29": ["روز ملی کوهنورد"],
+    "8-1": ["روز آمار و برنامه ریزی"],
+    "8-7": ["سالروز ورود کوروش بزرگ به بابل"],
+    "8-8": ["روز نوجوان"],
+    "8-10": ["آبان روز", "جشن آبانگان"],
+    "8-13": ["روز دانش آموز"],
+    "8-14": ["روز فرهنگ عمومی"],
+    "8-15": ["جشن میانه پاییز"],
+    "8-18": ["روز ملی کیفیت"],
+    "8-23": ["روز جهانی دیابت"],
+    "8-24": ["روز کتاب و کتابخوانی"],
+    "8-28": ["روز جهانی فلسفه", "روز جهانی آقایان"],
+    "8-29": ["روز جهانی کودک"],
+    "9-1": ["آذر جشن"],
+    "9-4": ["روز جهانی مبارزه با خشونت علیه زنان"],
+    "9-5": ["روز بسیج مستضعفان"],
+    "9-7": ["روز نیروی دریایی"],
+    "9-9": ["جشن آذرگان", "آذر روز"],
+    "9-10": ["روز مجلس", "روز جهانی ایدز"],
+    "9-12": ["روز جهانی معلولان"],
+    "9-13": ["روز بیمه"],
+    "9-15": ["روز حسابدار"],
+    "9-16": ["روز دانشجو"],
+    "9-20": ["روز جهانی کوه نوردی"],
+    "9-25": ["روز پژوهش"],
+    "9-26": ["روز حمل و نقل"],
+    "9-30": ["جشن شب یلدا"],
+    "10-1": ["روز میلاد خورشید", "جشن خرم روز", "نخستین جشن دیگان"],
+    "10-4": ["جشن کریسمس"],
+    "10-5": ["سالروز زمین لرزه ی بم", "سالروز شهادت آشو زرتشت"],
+    "10-8": ["دی به آذر روز", "دومین جشن دیگان"],
+    "10-11": ["جشن آغاز سال نو میلادی"],
+    "10-13": ["شهادت سردار حاج قاسم سلیمانی"],
+    "10-15": ["دی به مهر روز", "سومین جشن دیگان"],
+    "10-20": ["سالروز قتل امیرکبیر"],
+    "10-23": ["دی به دین روز", "چهارمین جشن دیگان"],
+    "11-1": ["زادروز فردوسی"],
+    "11-2": ["بهمن روز", "جشن بهمنگان"],
+    "11-5": ["جشن نوسره"],
+    "11-10": ["جشن سده"],
+    "11-12": ["بازگشت امام خمینی (ره) به ایران"],
+    "11-15": ["جشن میانه زمستان"],
+    "11-19": ["روز نیروی هوایی"],
+    "11-22": ["پیروزی انقلاب اسلامی", "حمله به سفارت روسیه و قتل گریبایدوف"],
+    "11-25": ["روز ولنتاین"],
+    "11-29": ["جشن سپندارمذگان", "روز عشق"],
+    "12-2": ["روز جهانی زبان مادری"],
+    "12-5": ["روز بزرگداشت زمین و بانوان", "روز بزرگداشت خواجه نصیر الدین طوسی", "روز مهندس"],
+    "12-7": ["سالروز استقلال کانون وکلای دادگستری", "روز وکیل مدافع", "سالروز درگذشت علی اکبر دهخدا"],
+    "12-15": ["روز درختکاری"],
+    "12-17": ["روز جهانی زنان"],
+    "12-25": ["پایان سرایش شاهنامه"],
+    "12-29": ["روز ملی شدن صنعت نفت ایران", "روز جهانی شادی"],
+}
 
-def get_events_for_jalali(year, month, day):
-    cache_key = f"{year}-{month}-{day}"
-    if cache_key in events_cache:
-        cache_time = events_cache_time.get(cache_key)
-        if cache_time and (datetime.now() - cache_time).seconds < 86400:
-            return events_cache[cache_key]
-    
-    try:
-        from rokh import get_day_events, DateSystem
-        events_data = get_day_events(year, month, day, system=DateSystem.JALALI)
-        events = []
-        if events_data:
-            if isinstance(events_data, list):
-                for event in events_data:
-                    if isinstance(event, dict) and 'description' in event:
-                        events.append(event['description'])
-            elif isinstance(events_data, dict) and 'events' in events_data:
-                for event in events_data['events']:
-                    if 'description' in event:
-                        events.append(event['description'])
-        if events:
-            events_cache[cache_key] = events
-            events_cache_time[cache_key] = datetime.now()
-            return events
-    except:
-        pass
-    
-    fallback_events = {
-        "1-1": ["جشن نوروز", "سال نو"],
-        "12-29": ["شهادت امام علی (ع)"],
-        "12-30": ["شهادت امام علی (ع)"],
-        "1-13": ["روز طبیعت"],
-        "2-14": ["ولادت حضرت معصومه (س)"],
-        "3-21": ["ولادت امام رضا (ع)"],
-    }
+def get_shamsi_events(year, month, day):
     key = f"{month}-{day}"
-    events = fallback_events.get(key, ["هیچ مناسبت خاصی ثبت نشده است."])
-    events_cache[cache_key] = events
-    events_cache_time[cache_key] = datetime.now()
-    return events
+    return shamsi_events.get(key, ["هیچ مناسبت خاصی ثبت نشده است."])
 
 # ============================================================
 # 7. پیام انگیزشی
@@ -592,31 +693,47 @@ def get_motivation():
     return motivation_messages[index]
 
 # ============================================================
-# 8. ساخت پیام اصلی (کاملاً اصلاح‌شده)
+# 8. ساخت پیام اصلی
 # ============================================================
 def build_message(user_id, user_name, city):
     lang = get_user_language(user_id)
     
-    today = jdatetime.date.today()
+    today = get_today_tehran()
+    # تاریخ شمسی به فارسی
     persian_date = today.strftime("%A %d %B %Y")
+    persian_date = persian_date.replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     
-    hijri_today_obj = Gregorian(today.togregorian().year, today.togregorian().month, today.togregorian().day).to_hijri()
+    # تاریخ میلادی
+    gregorian_today = today.togregorian()
+    miladi_date = gregorian_today.strftime("%B %d, %A")
+    
+    # تاریخ قمری امروز
     hijri_today = get_hijri_date(today.togregorian())
-    hijri_today_events = get_hijri_events(hijri_today_obj.month, hijri_today_obj.day)
+    hijri_today_formatted = f"{hijri_today['day']} {hijri_today['month_name']} {hijri_today['year']} / {hijri_today['month']} / {hijri_today['day']}"
+    
+    # مناسبت‌های قمری امروز
+    hijri_today_events = get_hijri_events(hijri_today['month'], hijri_today['day'])
     hijri_today_text = "\n".join([f"• {event}" for event in hijri_today_events])
     
+    # تاریخ میلادی و قمری فردا
     tomorrow = today + timedelta(days=1)
-    hijri_tomorrow_obj = Gregorian(tomorrow.togregorian().year, tomorrow.togregorian().month, tomorrow.togregorian().day).to_hijri()
+    gregorian_tomorrow = tomorrow.togregorian()
+    miladi_tomorrow = gregorian_tomorrow.strftime("%B %d, %A")
+    
     hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
-    hijri_tomorrow_events = get_hijri_events(hijri_tomorrow_obj.month, hijri_tomorrow_obj.day)
+    hijri_tomorrow_formatted = f"{hijri_tomorrow['day']} {hijri_tomorrow['month_name']} {hijri_tomorrow['year']} / {hijri_tomorrow['month']} / {hijri_tomorrow['day']}"
+    
+    hijri_tomorrow_events = get_hijri_events(hijri_tomorrow['month'], hijri_tomorrow['day'])
     hijri_tomorrow_text = "\n".join([f"• {event}" for event in hijri_tomorrow_events])
     
-    today_events = get_events_for_jalali(today.year, today.month, today.day)
+    # مناسبت‌های شمسی (از دیکشنری داخلی)
+    today_events = get_shamsi_events(today.year, today.month, today.day)
     today_events_text = "\n".join([f"• {event}" for event in today_events])
     
-    tomorrow_events = get_events_for_jalali(tomorrow.year, tomorrow.month, tomorrow.day)
+    tomorrow_events = get_shamsi_events(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_events_text = "\n".join([f"• {event}" for event in tomorrow_events])
     
+    # اوقات شرعی
     prayer_times = get_prayer_times(city)
     prayer_text = ""
     if prayer_times:
@@ -625,6 +742,7 @@ def build_message(user_id, user_name, city):
     else:
         prayer_text = "⚠️ " + TEXTS[lang].get("no_events", "در دسترس نیست.")
     
+    # آب و هوا
     weather = get_weather(city)
     weather_text = ""
     if weather:
@@ -634,21 +752,24 @@ def build_message(user_id, user_name, city):
     
     motivation = get_motivation()
     
-    message = "\n\n".join([
-        TEXTS[lang]["welcome"].format(name=user_name),
-        TEXTS[lang]["date"].format(persian=persian_date),
-        TEXTS[lang]["hijri"].format(hijri=hijri_today),
-        TEXTS[lang]["hijri_events_today"] + "\n" + hijri_today_text,
-        TEXTS[lang]["hijri_events_tomorrow"] + "\n" + hijri_tomorrow_text,
-        TEXTS[lang]["shamsi_events_today"] + "\n" + today_events_text,
-        TEXTS[lang]["shamsi_events_tomorrow"] + "\n" + tomorrow_events_text,
-        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text,
-        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text,
-        TEXTS[lang]["motivation"] + "\n" + motivation,
+    message = (
+        TEXTS[lang]["welcome"].format(name=user_name) + "\n\n"
+        "📅 **امروز (میلادی):** " + miladi_date + "\n"
+        "📅 **امروز (شمسی):** " + persian_date + "\n"
+        "🌙 **امروز (قمری):** " + hijri_today_formatted + "\n\n"
+        "📌 **مناسبت‌های قمری امروز:**\n" + hijri_today_text + "\n\n"
+        "🔮 **فردا (میلادی):** " + miladi_tomorrow + "\n"
+        "🌙 **فردا (قمری):** " + hijri_tomorrow_formatted + "\n"
+        "📌 **مناسبت‌های قمری فردا:**\n" + hijri_tomorrow_text + "\n\n"
+        "📌 **مناسبت‌های شمسی امروز:**\n" + today_events_text + "\n\n"
+        "🔮 **مناسبت‌های شمسی فردا:**\n" + tomorrow_events_text + "\n\n"
+        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n"
+        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n"
+        TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n"
         TEXTS[lang]["change_city"]
-    ])
-    
-    return message  # ⬅️ این خط را حتماً اضافه کنید
+    )
+    return message
+
 # ============================================================
 # 9. دکمه‌ها
 # ============================================================
@@ -674,8 +795,10 @@ def get_language_buttons():
 
 def get_calendar_buttons(year, month, day, user_id):
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ ماه قبل", callback_data=f"cal_{year}_{month-1}_{day}"),
+        [InlineKeyboardButton("◀️ روز قبل", callback_data=f"day_{year}_{month}_{day-1}"),
          InlineKeyboardButton("📅 امروز", callback_data="calendar_today"),
+         InlineKeyboardButton("روز بعد ▶️", callback_data=f"day_{year}_{month}_{day+1}")],
+        [InlineKeyboardButton("◀️ ماه قبل", callback_data=f"cal_{year}_{month-1}_{day}"),
          InlineKeyboardButton("ماه بعد ▶️", callback_data=f"cal_{year}_{month+1}_{day}")],
         [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
     ])
@@ -683,28 +806,47 @@ def get_calendar_buttons(year, month, day, user_id):
 def get_calendar_text(year, month, day, user_id):
     lang = get_user_language(user_id)
     try:
-        date_obj = jdatetime.date(year, month, 1)
-        month_name = date_obj.strftime("%B")
-        events_text = ""
-        for d in range(1, 32):
-            try:
-                events = get_events_for_jalali(year, month, d)
-                if events and events != ["هیچ مناسبت خاصی ثبت نشده است."]:
-                    events_text += f"\n📅 {d} {month_name}:\n"
-                    for event in events:
-                        events_text += f"   • {event}\n"
-            except:
-                break
+        target_date = jdatetime.date(year, month, day)
+        month_name = target_date.strftime("%B")
+        date_str = target_date.strftime("%A %d %B %Y")
+        date_str = date_str.replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
         
-        if not events_text:
-            events_text = "\n" + TEXTS[lang]["no_events"]
+        shamsi_events = get_shamsi_events(year, month, day)
+        shamsi_text = "\n".join([f"• {event}" for event in shamsi_events])
         
-        return (
-            TEXTS[lang]["calendar_title"].format(month=month_name, year=year) +
-            TEXTS[lang]["calendar_today"].format(date=f"{day} {month_name} {year}") +
-            events_text
+        hijri = get_hijri_date(target_date.togregorian())
+        hijri_formatted = f"{hijri['day']} {hijri['month_name']} {hijri['year']} / {hijri['month']} / {hijri['day']}"
+        hijri_events = get_hijri_events(hijri['month'], hijri['day'])
+        hijri_text = "\n".join([f"• {event}" for event in hijri_events])
+        
+        city = get_user_city(user_id)
+        prayer = get_prayer_times(city)
+        prayer_text = ""
+        if prayer:
+            for name, time in prayer.items():
+                prayer_text += f"🕌 {name}: {time}\n"
+        else:
+            prayer_text = "⚠️ در دسترس نیست."
+        
+        weather = get_weather(city)
+        weather_text = ""
+        if weather:
+            weather_text = f"🌡️ دما: {weather['دما']}\n🌤️ وضعیت: {weather['وضعیت']}\n💧 رطوبت: {weather['رطوبت']}"
+        else:
+            weather_text = "⚠️ در دسترس نیست."
+        
+        message = (
+            f"📅 **{date_str}**\n"
+            f"🌙 **قمری:** {hijri_formatted}\n\n"
+            f"📌 **مناسبت‌های شمسی:**\n{shamsi_text}\n\n"
+            f"📌 **مناسبت‌های قمری:**\n{hijri_text}\n\n"
+            f"⏰ **اوقات شرعی ({city}):**\n{prayer_text}\n"
+            f"🌦️ **آب و هوا ({city}):**\n{weather_text}\n\n"
+            "🔄 با دکمه‌های زیر روز یا ماه را تغییر دهید."
         )
-    except:
+        return message
+    except Exception as e:
+        print(f"خطا در تقویم: {e}")
         return "❌ خطا در نمایش تقویم."
 
 # ============================================================
@@ -749,7 +891,7 @@ async def language_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def calendar_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    today = jdatetime.date.today()
+    today = get_today_tehran()
     text = get_calendar_text(today.year, today.month, today.day, user_id)
     await update.message.reply_text(
         text,
@@ -831,14 +973,38 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif data == "calendar_menu":
-        today = jdatetime.date.today()
+        today = get_today_tehran()
         text = get_calendar_text(today.year, today.month, today.day, user_id)
         await query.edit_message_text(text, reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id))
     
     elif data == "calendar_today":
-        today = jdatetime.date.today()
+        today = get_today_tehran()
         text = get_calendar_text(today.year, today.month, today.day, user_id)
         await query.edit_message_text(text, reply_markup=get_calendar_buttons(today.year, today.month, today.day, user_id))
+    
+    elif data.startswith("day_"):
+        parts = data.split("_")
+        year = int(parts[1])
+        month = int(parts[2])
+        day = int(parts[3])
+        try:
+            jdatetime.date(year, month, day)
+        except ValueError:
+            if day < 1:
+                month -= 1
+                if month < 1:
+                    month = 12
+                    year -= 1
+                last_day = jdatetime.date(year, month, 1) - timedelta(days=1)
+                day = last_day.day
+            else:
+                month += 1
+                if month > 12:
+                    month = 1
+                    year += 1
+                day = 1
+        text = get_calendar_text(year, month, day, user_id)
+        await query.edit_message_text(text, reply_markup=get_calendar_buttons(year, month, day, user_id))
     
     elif data.startswith("cal_"):
         parts = data.split("_")
@@ -887,7 +1053,7 @@ def start_scheduler(app):
         args=[app]
     )
     scheduler.start()
-    print("⏰ زمان‌بند ارسال خودکار فعال شد.")
+    print("⏰ زمان‌بند ارسال خودکار فعال شد (هر روز ساعت ۰۰:۰۰ به وقت تهران).")
 
 # ============================================================
 # 13. اجرای اصلی
