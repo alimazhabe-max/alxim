@@ -259,7 +259,10 @@ def get_weather(city):
 
 def get_hijri_date(g_date):
     try:
-        hijri = Gregorian(g_date.year, g_date.month, g_date.day).to_hijri()
+        # یک روز قبل را محاسبه کن
+        from datetime import timedelta
+        g_date_adjusted = g_date - timedelta(days=1)
+        hijri = Gregorian(g_date_adjusted.year, g_date_adjusted.month, g_date_adjusted.day).to_hijri()
         hijri_months = {
             1: "محرم", 2: "صفر", 3: "ربیع‌الاول", 4: "ربیع‌الثانی",
             5: "جمادی‌الاول", 6: "جمادی‌الثانی", 7: "رجب", 8: "شعبان",
