@@ -3,5 +3,4 @@ requests
 jdatetime
 hijri-converter
 apscheduler
-rokh
 pytz
