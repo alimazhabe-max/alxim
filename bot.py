@@ -752,20 +752,21 @@ def build_message(user_id, user_name, city):
     
     motivation = get_motivation()
     
+    # ✅ اصلاح: اضافه کردن عملگر + در انتهای هر خط
     message = (
-        TEXTS[lang]["welcome"].format(name=user_name) + "\n\n"
-        "📅 **امروز (میلادی):** " + miladi_date + "\n"
-        "📅 **امروز (شمسی):** " + persian_date + "\n"
-        "🌙 **امروز (قمری):** " + hijri_today_formatted + "\n\n"
-        "📌 **مناسبت‌های قمری امروز:**\n" + hijri_today_text + "\n\n"
-        "🔮 **فردا (میلادی):** " + miladi_tomorrow + "\n"
-        "🌙 **فردا (قمری):** " + hijri_tomorrow_formatted + "\n"
-        "📌 **مناسبت‌های قمری فردا:**\n" + hijri_tomorrow_text + "\n\n"
-        "📌 **مناسبت‌های شمسی امروز:**\n" + today_events_text + "\n\n"
-        "🔮 **مناسبت‌های شمسی فردا:**\n" + tomorrow_events_text + "\n\n"
-        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n"
-        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n"
-        TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n"
+        TEXTS[lang]["welcome"].format(name=user_name) + "\n\n" +
+        "📅 **امروز (میلادی):** " + miladi_date + "\n" +
+        "📅 **امروز (شمسی):** " + persian_date + "\n" +
+        "🌙 **امروز (قمری):** " + hijri_today_formatted + "\n\n" +
+        "📌 **مناسبت‌های قمری امروز:**\n" + hijri_today_text + "\n\n" +
+        "🔮 **فردا (میلادی):** " + miladi_tomorrow + "\n" +
+        "🌙 **فردا (قمری):** " + hijri_tomorrow_formatted + "\n" +
+        "📌 **مناسبت‌های قمری فردا:**\n" + hijri_tomorrow_text + "\n\n" +
+        "📌 **مناسبت‌های شمسی امروز:**\n" + today_events_text + "\n\n" +
+        "🔮 **مناسبت‌های شمسی فردا:**\n" + tomorrow_events_text + "\n\n" +
+        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n" +
+        TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n" +
+        TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n" +
         TEXTS[lang]["change_city"]
     )
     return message
