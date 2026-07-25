@@ -1108,5 +1108,20 @@ def main():
     print("✅ ربات با تمام قابلیت‌های جدید روشن شد...")
     app.run_polling()
 
+from flask import Flask
+import threading
+
+app_flask = Flask(__name__)
+
+@app_flask.route('/')
+def home():
+    return "ربات روشن است! ✅"
+
+def run_flask():
+    app_flask.run(host='0.0.0.0', port=8080)
+
+# اجرای Flask در یک ترد جداگانه
+threading.Thread(target=run_flask, daemon=True).start()
+
 if __name__ == "__main__":
     main()
