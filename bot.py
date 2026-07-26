@@ -786,7 +786,8 @@ def get_city_buttons(user_id):
          InlineKeyboardButton("شیراز", callback_data="city_شیراز"),
          InlineKeyboardButton("تبریز", callback_data="city_تبریز")],
         [InlineKeyboardButton("🌍 زبان", callback_data="language_menu"),
-         InlineKeyboardButton("📅 تقویم", callback_data="calendar_menu")]
+         InlineKeyboardButton("📅 تقویم", callback_data="calendar_menu"),
+         InlineKeyboardButton("🔄 بروزرسانی", callback_data="refresh_main")]  # دکمه بروزرسانی
     ])
 
 def get_language_buttons():
