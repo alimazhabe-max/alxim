@@ -695,16 +695,12 @@ def build_message(user_id, user_name, city):
     persian_month = PERSIAN_MONTHS[today.month]
     persian_day_text = str(today.day).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_year_text = str(today.year).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
-    
-    # عددی
     persian_year_num = str(today.year).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_month_num = str(today.month).zfill(2).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_day_num = str(today.day).zfill(2).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
-    
-    # فرمت نهایی شمسی: "شنبه ۰۳ مرداد ۱۴۰۵/۰۵/۰۳"
     persian_date_final = f"{persian_weekday} {persian_day_text} {persian_month} {persian_year_text}/{persian_month_num}/{persian_day_num}"
     
-    # تاریخ میلادی با فرمت "July 25, Saturday 2026/09/1"
+    # تاریخ میلادی امروز
     gregorian_today = today.togregorian()
     miladi_date_text = gregorian_today.strftime("%B %d, %A")
     miladi_year = str(gregorian_today.year)
@@ -720,20 +716,20 @@ def build_message(user_id, user_name, city):
     hijri_today_events = get_hijri_events(hijri_today['month'], hijri_today['day'])
     hijri_today_text = "\n".join([f"• {event}" for event in hijri_today_events])
     
-    # تاریخ فردا
-    tomorrow = today + timedelta(days=1)
-    gregorian_tomorrow = tomorrow.togregorian()
-    miladi_tomorrow = gregorian_tomorrow.strftime("%B %d, %A")
+    # ❌ بخش‌های فردا حذف شدند
+    # 🔮 فردا (میلادی) و 🌙 فردا (قمری) دیگر نمایش داده نمی‌شوند
     
-    hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
-    hijri_tomorrow_formatted = f"{hijri_tomorrow['day']} {hijri_tomorrow['month_name']} {hijri_tomorrow['year']} / {hijri_tomorrow['month']} / {hijri_tomorrow['day']}"
-    hijri_tomorrow_events = get_hijri_events(hijri_tomorrow['month'], hijri_tomorrow['day'])
-    hijri_tomorrow_text = "\n".join([f"• {event}" for event in hijri_tomorrow_events])
-    
-    # مناسبت‌های شمسی
+    # مناسبت‌های شمسی امروز
     today_events = get_shamsi_events(today.year, today.month, today.day)
     today_events_text = "\n".join([f"• {event}" for event in today_events])
     
+    # مناسبت‌های قمری فردا (برای بخش مناسبت‌ها باقی می‌ماند)
+    tomorrow = today + timedelta(days=1)
+    hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
+    hijri_tomorrow_events = get_hijri_events(hijri_tomorrow['month'], hijri_tomorrow['day'])
+    hijri_tomorrow_text = "\n".join([f"• {event}" for event in hijri_tomorrow_events])
+    
+    # مناسبت‌های شمسی فردا (برای بخش مناسبت‌ها باقی می‌ماند)
     tomorrow_events = get_shamsi_events(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_events_text = "\n".join([f"• {event}" for event in tomorrow_events])
     
@@ -756,14 +752,13 @@ def build_message(user_id, user_name, city):
     
     motivation = get_motivation()
     
+    # ساخت پیام نهایی (بدون دو خط فردا)
     message = (
         TEXTS[lang]["welcome"].format(name=user_name) + "\n\n" +
         "📅 **امروز (شمسی):** " + persian_date_final + "\n" +
         "📅 **امروز (میلادی):** " + miladi_date_final + "\n" +
         "🌙 **امروز (قمری):** " + hijri_today_formatted + "\n\n" +
         "📌 **مناسبت‌های قمری امروز:**\n" + hijri_today_text + "\n\n" +
-        "🔮 **فردا (میلادی):** " + miladi_tomorrow + "\n" +
-        "🌙 **فردا (قمری):** " + hijri_tomorrow_formatted + "\n" +
         "📌 **مناسبت‌های قمری فردا:**\n" + hijri_tomorrow_text + "\n\n" +
         "📌 **مناسبت‌های شمسی امروز:**\n" + today_events_text + "\n\n" +
         "🔮 **مناسبت‌های شمسی فردا:**\n" + tomorrow_events_text + "\n\n" +
