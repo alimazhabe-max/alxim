@@ -233,9 +233,9 @@ def retry_request(url, timeout=5, retries=2):
             pass
     return None
     
-def get_prayer_times(city, country="Iran"):
+    def get_prayer_times(city, country="Iran"):
     try:
-        # متد ۷ = سازمان اوقاف و امور خیریه کویت (هماهنگ با باحساب)
+        # متد ۷ = سازمان اوقاف و امور خیریه کویت
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=7&school=0"
         response = retry_request(url)
         if not response:
@@ -249,6 +249,7 @@ def get_prayer_times(city, country="Iran"):
             "اذان عصر": timings["Asr"],
             "اذان مغرب": timings["Maghrib"],
             "اذان عشاء": timings["Isha"],
+            "نیمه‌شب شرعی": timings.get("Midnight", "نامشخص"),  # ✅ اضافه شده
         }
     except:
         return None
