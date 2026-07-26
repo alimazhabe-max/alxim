@@ -1058,6 +1058,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         city = get_user_city(user_id)
         message = build_message(user_id, first_name, city)
         await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
+    elif data == "refresh_main":
+    # به‌روزرسانی اطلاعات امروز و نمایش منوی اصلی
+    first_name = get_user(user_id)[1] if get_user(user_id) else "کاربر"
+    city = get_user_city(user_id)
+    message = build_message(user_id, first_name, city)  # اطلاعات تازه از APIها گرفته می‌شود
+    await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
 
 # ============================================================
 # 13. ارسال خودکار
