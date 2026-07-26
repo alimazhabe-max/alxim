@@ -235,21 +235,37 @@ def retry_request(url, timeout=5, retries=2):
     
     def get_prayer_times(city, country="Iran"):
     try:
-        # متد ۷ = سازمان اوقاف و امور خیریه کویت
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=7&school=0"
         response = retry_request(url)
         if not response:
             return None
         data = response.json()
         timings = data["data"]["timings"]
+        
+        # دریافت زمان‌ها
+        maghrib = timings["Maghrib"]  # اذان مغرب
+        fajr = timings["Fajr"]        # اذان صبح
+        
+        # محاسبه‌ی نیمه‌شب شرعی (میانگین مغرب و صبح)
+        try:
+            maghrib_time = datetime.strptime(maghrib, "%H:%M")
+            fajr_time = datetime.strptime(fajr, "%H:%M")
+            # اگر فجر روز بعد است، ۲۴ ساعت اضافه می‌کنیم
+            if fajr_time < maghrib_time:
+                fajr_time = fajr_time.replace(hour=fajr_time.hour + 24)
+            diff = (fajr_time - maghrib_time).seconds // 2
+            midnight = (datetime.combine(datetime.today(), maghrib_time.time()) + timedelta(seconds=diff)).strftime("%H:%M")
+        except:
+            midnight = timings.get("Midnight", "نامشخص")
+        
         return {
-            "اذان صبح": timings["Fajr"],
+            "اذان صبح": fajr,
             "طلوع آفتاب": timings["Sunrise"],
             "اذان ظهر": timings["Dhuhr"],
             "اذان عصر": timings["Asr"],
-            "اذان مغرب": timings["Maghrib"],
+            "اذان مغرب": maghrib,
             "اذان عشاء": timings["Isha"],
-            "نیمه‌شب شرعی": timings.get("Midnight", "نامشخص"),  # ✅ اضافه شده
+            "نیمه‌شب شرعی": midnight,  # ✅ محاسبه شده
         }
     except:
         return None
