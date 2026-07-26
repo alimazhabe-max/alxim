@@ -235,7 +235,9 @@ def retry_request(url, timeout=5, retries=2):
 
 def get_prayer_times(city, country="Iran"):
     try:
-        url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=8"
+        # تغییر متد به 4 (ام‌القرا) برای هماهنگی با باحساب
+        # school=0 برای فقه جعفری (شیعه)
+        url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=4&school=0"
         response = retry_request(url)
         if not response:
             return None
