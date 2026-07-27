@@ -9,7 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 import random
 import asyncio
 from hijri_converter import Gregorian
-from datetime import datetime
+from datetime import datetime, time, timedelta as dt_timedelta
 import sqlite3
 import pytz
 
@@ -36,18 +36,18 @@ if not BOT_TOKEN:
 
 ADMIN_IDS = [int(id.strip()) for id in os.environ.get("ADMIN_IDS", "").split(",") if id.strip()]
 
-# ⚠️ آیدی عددی کانال را اینجا قرار دهید (با -100 شروع می‌شود)
-# برای پیدا کردن آیدی کانال، ربات خود را به کانال اضافه کنید و پیامی بفرستید
-# سپس در لاگ‌های Render یا با دستور /id در ربات پیدا کنید
-REQUIRED_CHANNEL_ID = -1004385593103  # ← این را با آیدی واقعی کانال جایگزین کنید
+REQUIRED_CHANNEL_ID = -1004385593103
 REQUIRED_CHANNEL_LINK = "https://t.me/HmHermi"
 
 loop = asyncio.new_event_loop()
+tehran_tz = pytz.timezone('Asia/Tehran')
 
 def get_today_tehran():
-    tehran_tz = pytz.timezone('Asia/Tehran')
     now = datetime.now(tehran_tz)
     return jdatetime.datetime.fromgregorian(datetime=now).date()
+
+def get_now_tehran():
+    return datetime.now(tehran_tz)
 
 # ============================================================
 # 2. دیتابیس (SQLite)
@@ -158,6 +158,8 @@ TEXTS = {
         "calendar_today": "📌 امروز: {date}",
         "calendar_event": "• {event}",
         "not_member": "❌ برای استفاده از این ربات، ابتدا در کانال زیر عضو شوید:\n{channel_link}\n\nپس از عضویت، دوباره `/start` را بفرستید.",
+        "next_prayer": "⏳ زمان تا اذان بعدی ({name}): **{hours} ساعت و {minutes} دقیقه**",
+        "next_prayer_short": "⏳ زمان تا اذان بعدی ({name}): **{time_left}**"
     },
     "en": {
         "welcome": "🌟 Hello dear {name}! 🌟",
@@ -185,6 +187,8 @@ TEXTS = {
         "calendar_today": "📌 Today: {date}",
         "calendar_event": "• {event}",
         "not_member": "❌ To use this bot, please join the channel below first:\n{channel_link}\n\nAfter joining, send `/start` again.",
+        "next_prayer": "⏳ Time until next prayer ({name}): **{hours} hours and {minutes} minutes**",
+        "next_prayer_short": "⏳ Time until next prayer ({name}): **{time_left}**"
     },
     "ar": {
         "welcome": "🌟 مرحباً عزيزي {name}! 🌟",
@@ -212,6 +216,33 @@ TEXTS = {
         "calendar_today": "📌 اليوم: {date}",
         "calendar_event": "• {event}",
         "not_member": "❌ لاستخدام هذا البوت، يرجى الانضمام إلى القناة أدناه أولاً:\n{channel_link}\n\nبعد الانضمام، أرسل `/start` مرة أخرى.",
+        "next_prayer": "⏳ الوقت المتبقي حتى الصلاة القادمة ({name}): **{hours} ساعة و {minutes} دقيقة**",
+        "next_prayer_short": "⏳ الوقت المتبقي حتى الصلاة القادمة ({name}): **{time_left}**"
+    }
+}
+
+# نام‌های اذان به زبان‌های مختلف
+PRAYER_NAMES = {
+    "fa": {
+        "اذان صبح": "اذان صبح",
+        "اذان ظهر": "اذان ظهر",
+        "اذان عصر": "اذان عصر",
+        "اذان مغرب": "اذان مغرب",
+        "اذان عشاء": "اذان عشاء"
+    },
+    "en": {
+        "اذان صبح": "Fajr",
+        "اذان ظهر": "Dhuhr",
+        "اذان عصر": "Asr",
+        "اذان مغرب": "Maghrib",
+        "اذان عشاء": "Isha"
+    },
+    "ar": {
+        "اذان صبح": "الفجر",
+        "اذان ظهر": "الظهر",
+        "اذان عصر": "العصر",
+        "اذان مغرب": "المغرب",
+        "اذان عشاء": "العشاء"
     }
 }
 
@@ -232,8 +263,8 @@ def retry_request(url, timeout=5, retries=2):
         except:
             pass
     return None
-    
-    def get_prayer_times(city, country="Iran"):
+
+def get_prayer_times(city, country="Iran"):
     try:
         url = f"https://api.aladhan.com/v1/timingsByCity?city={city}&country={country}&method=7&school=0"
         response = retry_request(url)
@@ -242,19 +273,16 @@ def retry_request(url, timeout=5, retries=2):
         data = response.json()
         timings = data["data"]["timings"]
         
-        # دریافت زمان‌ها
-        maghrib = timings["Maghrib"]  # اذان مغرب
-        fajr = timings["Fajr"]        # اذان صبح
+        maghrib = timings["Maghrib"]
+        fajr = timings["Fajr"]
         
-        # محاسبه‌ی نیمه‌شب شرعی (میانگین مغرب و صبح)
         try:
             maghrib_time = datetime.strptime(maghrib, "%H:%M")
             fajr_time = datetime.strptime(fajr, "%H:%M")
-            # اگر فجر روز بعد است، ۲۴ ساعت اضافه می‌کنیم
             if fajr_time < maghrib_time:
                 fajr_time = fajr_time.replace(hour=fajr_time.hour + 24)
             diff = (fajr_time - maghrib_time).seconds // 2
-            midnight = (datetime.combine(datetime.today(), maghrib_time.time()) + timedelta(seconds=diff)).strftime("%H:%M")
+            midnight = (datetime.combine(datetime.today(), maghrib_time.time()) + dt_timedelta(seconds=diff)).strftime("%H:%M")
         except:
             midnight = timings.get("Midnight", "نامشخص")
         
@@ -265,7 +293,7 @@ def retry_request(url, timeout=5, retries=2):
             "اذان عصر": timings["Asr"],
             "اذان مغرب": maghrib,
             "اذان عشاء": timings["Isha"],
-            "نیمه‌شب شرعی": midnight,  # ✅ محاسبه شده
+            "نیمه‌شب شرعی": midnight,
         }
     except:
         return None
@@ -289,7 +317,6 @@ def get_weather(city):
 
 def get_hijri_date(g_date):
     try:
-        from datetime import timedelta as dt_timedelta
         g_date_adjusted = g_date - dt_timedelta(days=1)
         hijri = Gregorian(g_date_adjusted.year, g_date_adjusted.month, g_date_adjusted.day).to_hijri()
         hijri_months = {
@@ -308,7 +335,54 @@ def get_hijri_date(g_date):
         return {"day": 0, "month": 0, "month_name": "نامشخص", "year": 0, "full": "نامشخص"}
 
 # ============================================================
-# 5. دیکشنری کامل رویدادهای قمری (تمام روزها - خلاصه شده)
+# 5. توابع محاسبه زمان باقی‌مانده تا اذان بعدی
+# ============================================================
+def get_next_prayer_time(prayer_times, now_dt):
+    """
+    prayer_times: دیکشنری شامل زمان‌های اذان با کلیدهای فارسی
+    now_dt: datetime با timezone تهران
+    بازگرداند: (نام اذان, timedelta باقی‌مانده) یا None در صورت خطا
+    """
+    prayer_keys = ["اذان صبح", "اذان ظهر", "اذان عصر", "اذان مغرب", "اذان عشاء"]
+    today = now_dt.date()
+    prayer_datetimes = []
+    
+    for key in prayer_keys:
+        if key in prayer_times:
+            try:
+                hour, minute = map(int, prayer_times[key].split(':'))
+                dt = datetime.combine(today, time(hour, minute))
+                dt = tehran_tz.localize(dt)
+                prayer_datetimes.append((key, dt))
+            except:
+                continue
+    
+    if not prayer_datetimes:
+        return None
+    
+    future_prayers = [(key, dt) for key, dt in prayer_datetimes if dt > now_dt]
+    if future_prayers:
+        next_prayer = min(future_prayers, key=lambda x: x[1])
+        return next_prayer[0], next_prayer[1] - now_dt
+    else:
+        next_day_prayers = [(key, dt + dt_timedelta(days=1)) for key, dt in prayer_datetimes]
+        next_prayer = min(next_day_prayers, key=lambda x: x[1])
+        return next_prayer[0], next_prayer[1] - now_dt
+
+def format_time_delta(delta, lang='fa'):
+    total_seconds = int(delta.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    
+    if lang == 'fa':
+        hours_str = str(hours).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
+        minutes_str = str(minutes).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
+        return hours_str, minutes_str
+    else:
+        return str(hours), str(minutes)
+
+# ============================================================
+# 6. دیکشنری کامل رویدادهای قمری
 # ============================================================
 hijri_events = {
     "1-1": ["آغاز سال هجرى قمرى", "يورش ابرهه به مكه", "آغاز ایام حسینی"],
@@ -509,7 +583,7 @@ def get_hijri_events(hijri_month, hijri_day):
     return hijri_events.get(key, ["هیچ مناسبت قمری خاصی ثبت نشده است."])
 
 # ============================================================
-# 6. دیکشنری مناسبت‌های شمسی
+# 7. دیکشنری مناسبت‌های شمسی
 # ============================================================
 shamsi_events = {
     "1-1": ["جشن نوروز", "سال نو"],
@@ -664,7 +738,7 @@ def get_shamsi_events(year, month, day):
     return shamsi_events.get(key, ["هیچ مناسبت خاصی ثبت نشده است."])
 
 # ============================================================
-# 7. پیام انگیزشی
+# 8. پیام انگیزشی (با 200 پیام)
 # ============================================================
 motivation_messages = [
     "🌙 مهتاب، حتی در تاریک‌ترین شب، راه گم‌کرده‌ها را پیدا می‌کند. تو هم راهت را خواهی یافت.",
@@ -891,78 +965,6 @@ motivation_messages = [
     "🌸 گل‌ها، زیباترین هدیه‌ی طبیعت‌اند؛ تو نیز زیباترین هدیه‌ی زندگی باش.",
     "🌄 خورشید، هر روز بدون توقع می‌درخشد؛ تو نیز بدون توقع بدرخش.",
     "🌙 شب، پر از رمز و راز است؛ تو نیز پر از رمز و راز باش.",
-    "🌊 اقیانوس، بی‌نهایت است و هر قطره‌اش ارزشمند؛ تو نیز ارزشمندی.",
-    "🌟 ستاره‌ها، با نورشان، ما را به سوی خود می‌کشند؛ تو نیز جذاب باش.",
-    "🌿 هر درخت، یک دنیاست؛ تو نیز یک دنیایی.",
-    "🌸 شکوفه‌ها، با عجله نمی‌شکفند؛ تو نیز با صبر شکوفا شو.",
-    "🌄 افق، همیشه در انتظار طلوع است؛ تو نیز در انتظار طلوع خودت باش.",
-    "🌙 مهتاب، شب‌ها را روشن می‌کند؛ تو نیز زندگی را روشن کن.",
-    "🌊 موج‌ها، با هماهنگی به پیش می‌روند؛ تو نیز با هماهنگی پیش برو.",
-    "🌟 هر ستاره، حکایتی دارد؛ تو نیز حکایتی داری.",
-    "🌿 جنگل، پر از زندگی است؛ تو نیز پر از زندگی باش.",
-    "🌸 گلی که در تاریکی می‌روید، از همه زیباتر است؛ تو نیز زیباترین باش.",
-    "🌄 خورشید، هر روز طلوعی تازه دارد؛ تو نیز هر روز تازه شو.",
-    "🌙 شب، با تمام سکوتش، آرامش‌بخش است؛ تو نیز آرامش‌بخش باش.",
-    "🌊 دریا، با تمام وسعتش، فروتن است؛ تو نیز فروتن باش.",
-    "🌟 ستاره‌ها، در آسمان می‌درخشند و ما را به رویا دعوت می‌کنند.",
-    "🌿 هر برگ، درخت را زیبا می‌کند؛ تو نیز با وجودت، جهان را زیبا کن.",
-    "🌸 بهار، با تمام شکوهش، به ما می‌آموزد که زندگی دوباره جاری است.",
-    "🌄 افق، هر روز نوید یک شروع تازه می‌دهد؛ تو نیز شروع تازه‌ای داشته باش.",
-    "🌙 مهتاب، در دل شب، مهربانی می‌بارد؛ تو نیز مهربان باش.",
-    "🌊 موج‌ها، با تلاش بی‌وقفه به ساحل می‌رسند؛ تو نیز بی‌وقفه تلاش کن.",
-    "🌟 هر ستاره، در آسمان جایگاه خود را دارد؛ تو نیز جایگاه خودت را پیدا کن.",
-    "🌿 درختان، با سایه‌شان، آرامش می‌دهند؛ تو نیز آرامش‌بخش باش.",
-    "🌸 گل‌ها، با عطرشان، دل‌ها را می‌ربایند؛ تو نیز با خوبی‌هایت دل‌ها را ببر.",
-    "🌄 خورشید، با تمام نورانیتش، بی‌ادعاست؛ تو نیز بی‌ادعا باش.",
-    "🌙 شب، با تمام تاریکی‌اش، پر از رویاهای زیباست؛ تو نیز رویاهایت را دنبال کن.",
-    "🌊 اقیانوس، با تمام عظمتش، آرام است؛ تو نیز در عظمتت آرام باش.",
-    "🌟 ستاره‌ها، با نورش، راه را نشان می‌دهند؛ تو نیز راهنما باش.",
-    "🌿 هر درخت، یک قصه دارد؛ تو نیز قصه‌ات را بنویس.",
-    "🌸 شکوفه‌ها، بهاری شدن را به ما می‌آموزند؛ تو نیز بهاری شو.",
-    "🌄 افق، همیشه روشن و امیدبخش است؛ تو نیز امیدبخش باش.",
-    "🌙 مهتاب، با تمام نقره‌ای‌اش، روح را نوازش می‌دهد؛ تو نیز نوازش‌گر باش.",
-    "🌊 موج‌ها، با تمام قدرتشان، به ساحل می‌رسند و بازمی‌گردند؛ تو نیز پرقدرت باش.",
-    "🌟 هر ستاره، در آسمان می‌درخشد و ما را به یاد بزرگی می‌اندازد.",
-    "🌿 جنگل، پر از صداهای ناب است؛ تو نیز صدای ناب خودت را پیدا کن.",
-    "🌸 گلی که در میان خارها می‌روید، مقاوم‌ترین است؛ تو نیز مقاوم باش.",
-    "🌄 خورشید، هر روز با قدرت می‌درخشد؛ تو نیز با قدرت بدرخش.",
-    "🌙 شب، تاریک است، اما پر از رمز و راز؛ تو نیز پر از رمز و راز باش.",
-    "🌊 دریا، بی‌نهایت است و هر قطره‌اش یک دنیا؛ تو نیز یک دنیایی.",
-    "🌟 ستاره‌ها، با نور خود، ما را به سوی خود می‌کشند؛ تو نیز جذاب باش.",
-    "🌿 هر برگ، بر درخت می‌روید و می‌افتد؛ تو نیز از هر مرحله‌ای درس بگیر.",
-    "🌸 بهار، با تمام زیبایی‌اش، به ما امید می‌دهد؛ تو نیز امید بخش باش.",
-    "🌄 افق، همیشه در انتظار طلوع است؛ تو نیز منتظر طلوع خودت باش.",
-    "🌙 مهتاب، شب‌ها را نقره‌ای می‌کند؛ تو نیز زندگی را با حضور خود نقره‌ای کن.",
-    "🌊 موج‌ها، هر بار با قدرت به ساحل می‌رسند؛ تو نیز با قدرت به اهدافت برس.",
-    "🌟 هر ستاره، در آسمان داستانی دارد؛ تو نیز داستان‌ات را بنویس.",
-    "🌿 درختان، با ایستادگی‌شان، به ما مقاومت می‌آموزند؛ تو نیز مقاوم باش.",
-    "🌸 گل‌ها، با عطرشان، جهان را پر از زیبایی می‌کنند؛ تو نیز جهان را زیبا کن.",
-    "🌄 خورشید، هر روز با نور خود، تاریکی را می‌شکند؛ تو نیز تاریکی‌ها را بشکن.",
-    "🌙 شب، با سکوتش، به ما فرصت تفکر می‌دهد؛ تو نیز فرصت تفکر داشته باش.",
-    "🌊 اقیانوس، با عمق‌های ناشناخته‌اش، ما را به کشف دعوت می‌کند؛ تو نیز کشف‌گر باش.",
-    "🌟 ستاره‌ها، با درخشش خود، به ما یادآوری می‌کنند که همیشه نور هست.",
-    "🌿 هر درخت، با هر برگ‌اش، داستانی می‌گوید؛ تو نیز داستان خودت را بگو.",
-    "🌸 بهار، با شکوفه‌هایش، زندگی را جشن می‌گیرد؛ تو نیز زندگی را جشن بگیر.",
-    "🌄 افق، همیشه روشن و پر از امید است؛ تو نیز پر از امید باش.",
-    "🌙 مهتاب، در دل شب، مهربانی می‌بارد؛ تو نیز مهربان باش.",
-    "🌊 موج‌ها، با هماهنگی به پیش می‌روند؛ تو نیز با هماهنگی پیش برو.",
-    "🌟 هر ستاره، راهنمای مسافران شب‌هاست؛ تو نیز راهنمای خودت باش.",
-    "🌿 جنگل، پر از رازهای ناگفته است؛ تو نیز رازهایت را کشف کن.",
-    "🌸 گلی که در تاریکی می‌شکفد، زیباترین است؛ تو نیز زیباترین باش.",
-    "🌄 خورشید، هر روز با قدرت می‌درخشد و ما را به تلاش دعوت می‌کند.",
-    "🌙 شب، با تمام سکوت‌اش، پر از رویاهای زیباست؛ تو نیز رویاهایت را دنبال کن.",
-    "🌊 دریا، با تمام وسعت‌اش، به ما می‌آموزد که بزرگ باشیم.",
-    "🌟 ستاره‌ها، با نور خود، تاریکی را شکست می‌دهند؛ تو نیز شکست‌ناپذیر باش.",
-    "🌿 هر برگ، درخت را زیبا می‌کند؛ تو نیز با وجودت، جهان را زیبا کن.",
-    "🌸 بهار، با تمام شکوه‌اش، به ما می‌گوید که زندگی دوباره جاری است.",
-    "🌄 افق، همیشه نوید یک شروع تازه می‌دهد؛ تو نیز شروع تازه‌ای داشته باش.",
-    "🌙 مهتاب، شب‌ها را دل‌انگیز می‌کند؛ تو نیز زندگی را دل‌انگیز کن.",
-    "🌊 موج‌ها، هرگز از حرکت باز نمی‌ایستند؛ تو نیز از حرکت باز نایست.",
-    "🌟 هر ستاره، نوری منحصربه‌فرد دارد؛ تو نیز نوری منحصربه‌فرد داری.",
-    "🌿 درختان، با ریشه‌هایشان به زمین وصل‌اند؛ تو نیز به ریشه‌هایت وصل باش.",
-    "🌸 گل‌ها، زیباترین هدیه‌ی طبیعت‌اند؛ تو نیز زیباترین هدیه‌ی زندگی باش.",
-    "🌄 خورشید، هر روز بدون توقع می‌درخشد؛ تو نیز بدون توقع بدرخش.",
-    "🌙 شب، پر از رمز و راز است؛ تو نیز پر از رمز و راز باش.",
     "🌊 اقیانوس، بی‌نهایت است و هر قطره‌اش ارزشمند؛ تو نیز ارزشمندی."
 ]
 last_motivation_index = -1
@@ -978,24 +980,21 @@ def get_motivation():
     return motivation_messages[index]
 
 # ============================================================
-# 8. ساخت پیام اصلی (با فرمت جدید تاریخ)
+# 9. ساخت پیام اصلی (با زمان اذان)
 # ============================================================
 def build_message(user_id, user_name, city):
     lang = get_user_language(user_id)
-    
+    now = get_now_tehran()
     today = get_today_tehran()
     
-    # تاریخ شمسی (نوشتاری + عددی در یک خط)
     persian_weekday = PERSIAN_WEEKDAYS[today.weekday()]
     persian_month = PERSIAN_MONTHS[today.month]
     persian_day_text = str(today.day).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_year_text = str(today.year).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
-    persian_year_num = str(today.year).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_month_num = str(today.month).zfill(2).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_day_num = str(today.day).zfill(2).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
     persian_date_final = f"{persian_weekday} {persian_day_text} {persian_month} {persian_year_text}/{persian_month_num}/{persian_day_num}"
     
-    # تاریخ میلادی امروز
     gregorian_today = today.togregorian()
     miladi_date_text = gregorian_today.strftime("%B %d, %A")
     miladi_year = str(gregorian_today.year)
@@ -1003,32 +1002,20 @@ def build_message(user_id, user_name, city):
     miladi_day = str(gregorian_today.day).zfill(2)
     miladi_date_final = f"{miladi_date_text} {miladi_year}/{miladi_month}/{miladi_day}"
     
-    # تاریخ قمری امروز
     hijri_today = get_hijri_date(today.togregorian())
     hijri_today_formatted = f"{hijri_today['day']} {hijri_today['month_name']} {hijri_today['year']} / {hijri_today['month']} / {hijri_today['day']}"
     
-    # مناسبت‌های قمری امروز
     hijri_today_events = get_hijri_events(hijri_today['month'], hijri_today['day'])
     hijri_today_text = "\n".join([f"• {event}" for event in hijri_today_events])
-    
-    # ❌ بخش‌های فردا حذف شدند
-    # 🔮 فردا (میلادی) و 🌙 فردا (قمری) دیگر نمایش داده نمی‌شوند
-    
-    # مناسبت‌های شمسی امروز
-    today_events = get_shamsi_events(today.year, today.month, today.day)
-    today_events_text = "\n".join([f"• {event}" for event in today_events])
-    
-    # مناسبت‌های قمری فردا (برای بخش مناسبت‌ها باقی می‌ماند)
     tomorrow = today + timedelta(days=1)
     hijri_tomorrow = get_hijri_date(tomorrow.togregorian())
     hijri_tomorrow_events = get_hijri_events(hijri_tomorrow['month'], hijri_tomorrow['day'])
     hijri_tomorrow_text = "\n".join([f"• {event}" for event in hijri_tomorrow_events])
-    
-    # مناسبت‌های شمسی فردا (برای بخش مناسبت‌ها باقی می‌ماند)
+    today_events = get_shamsi_events(today.year, today.month, today.day)
+    today_events_text = "\n".join([f"• {event}" for event in today_events])
     tomorrow_events = get_shamsi_events(tomorrow.year, tomorrow.month, tomorrow.day)
     tomorrow_events_text = "\n".join([f"• {event}" for event in tomorrow_events])
     
-    # اوقات شرعی
     prayer_times = get_prayer_times(city)
     prayer_text = ""
     if prayer_times:
@@ -1037,7 +1024,26 @@ def build_message(user_id, user_name, city):
     else:
         prayer_text = "⚠️ " + TEXTS[lang].get("no_events", "در دسترس نیست.")
     
-    # آب و هوا
+    next_prayer_text = ""
+    if prayer_times:
+        result = get_next_prayer_time(prayer_times, now)
+        if result:
+            prayer_name, delta = result
+            translated_name = PRAYER_NAMES.get(lang, PRAYER_NAMES["fa"]).get(prayer_name, prayer_name)
+            hours_str, minutes_str = format_time_delta(delta, lang)
+            if lang == 'fa':
+                next_prayer_text = TEXTS[lang]["next_prayer"].format(
+                    name=translated_name,
+                    hours=hours_str,
+                    minutes=minutes_str
+                )
+            else:
+                time_left = f"{hours_str}:{minutes_str}"
+                next_prayer_text = TEXTS[lang]["next_prayer_short"].format(
+                    name=translated_name,
+                    time_left=time_left
+                )
+    
     weather = get_weather(city)
     weather_text = ""
     if weather:
@@ -1047,7 +1053,6 @@ def build_message(user_id, user_name, city):
     
     motivation = get_motivation()
     
-    # ساخت پیام نهایی (بدون دو خط فردا)
     message = (
         TEXTS[lang]["welcome"].format(name=user_name) + "\n\n" +
         "📅 **امروز (شمسی):** " + persian_date_final + "\n" +
@@ -1057,7 +1062,8 @@ def build_message(user_id, user_name, city):
         "📌 **مناسبت‌های قمری فردا:**\n" + hijri_tomorrow_text + "\n\n" +
         "📌 **مناسبت‌های شمسی امروز:**\n" + today_events_text + "\n\n" +
         "🔮 **مناسبت‌های شمسی فردا:**\n" + tomorrow_events_text + "\n\n" +
-        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text + "\n" +
+        TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text +
+        (("\n" + next_prayer_text) if next_prayer_text else "") + "\n" +
         TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n" +
         TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n" +
         TEXTS[lang]["change_city"]
@@ -1065,7 +1071,7 @@ def build_message(user_id, user_name, city):
     return message
 
 # ============================================================
-# 9. دکمه‌ها
+# 10. دکمه‌ها
 # ============================================================
 def get_city_buttons(user_id):
     return InlineKeyboardMarkup([
@@ -1077,7 +1083,7 @@ def get_city_buttons(user_id):
          InlineKeyboardButton("تبریز", callback_data="city_تبریز")],
         [InlineKeyboardButton("🌍 زبان", callback_data="language_menu"),
          InlineKeyboardButton("📅 تقویم", callback_data="calendar_menu"),
-         InlineKeyboardButton("🔄 بروزرسانی", callback_data="refresh_main")]  # دکمه بروزرسانی
+         InlineKeyboardButton("🔄 بروزرسانی", callback_data="refresh_main")]
     ])
 
 def get_language_buttons():
@@ -1102,21 +1108,16 @@ def get_calendar_text(year, month, day, user_id):
     lang = get_user_language(user_id)
     try:
         target_date = jdatetime.date(year, month, day)
-        
-        # تاریخ شمسی (نوشتاری + عددی در یک خط)
         persian_weekday = PERSIAN_WEEKDAYS[target_date.weekday()]
         persian_month = PERSIAN_MONTHS[target_date.month]
         persian_day_text = str(target_date.day).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
         persian_year_text = str(target_date.year).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
-        persian_year_num = str(target_date.year).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
         persian_month_num = str(target_date.month).zfill(2).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
         persian_day_num = str(target_date.day).zfill(2).replace("0", "۰").replace("1", "۱").replace("2", "۲").replace("3", "۳").replace("4", "۴").replace("5", "۵").replace("6", "۶").replace("7", "۷").replace("8", "۸").replace("9", "۹")
         date_str = f"{persian_weekday} {persian_day_text} {persian_month} {persian_year_text}/{persian_month_num}/{persian_day_num}"
         
-        # مناسبت‌های شمسی و قمری
         shamsi_events = get_shamsi_events(year, month, day)
         shamsi_text = "\n".join([f"• {event}" for event in shamsi_events])
-        
         hijri = get_hijri_date(target_date.togregorian())
         hijri_formatted = f"{hijri['day']} {hijri['month_name']} {hijri['year']} / {hijri['month']} / {hijri['day']}"
         hijri_events = get_hijri_events(hijri['month'], hijri['day'])
@@ -1153,7 +1154,7 @@ def get_calendar_text(year, month, day, user_id):
         return "❌ خطا در نمایش تقویم."
 
 # ============================================================
-# 10. تابع بررسی عضویت در کانال
+# 11. تابع بررسی عضویت در کانال
 # ============================================================
 async def check_membership(user_id, bot):
     try:
@@ -1163,7 +1164,7 @@ async def check_membership(user_id, bot):
         return False
 
 # ============================================================
-# 11. دستورات
+# 12. دستورات
 # ============================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -1171,7 +1172,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first_name = user.first_name or "کاربر"
     lang = get_user_language(user_id)
     
-    # بررسی عضویت در کانال
     is_member = await check_membership(user_id, context.bot)
     if not is_member:
         await update.message.reply_text(
@@ -1258,7 +1258,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(TEXTS[lang]["broadcast_sent"].format(count=count))
 
 # ============================================================
-# 12. دکمه‌ها (CallbackQuery)
+# 13. دکمه‌ها (CallbackQuery)
 # ============================================================
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -1349,14 +1349,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message = build_message(user_id, first_name, city)
         await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
     elif data == "refresh_main":
-        # به‌روزرسانی اطلاعات امروز و نمایش منوی اصلی
         first_name = get_user(user_id)[1] if get_user(user_id) else "کاربر"
         city = get_user_city(user_id)
-        message = build_message(user_id, first_name, city)  # اطلاعات تازه از APIها گرفته می‌شود
+        message = build_message(user_id, first_name, city)
         await query.edit_message_text(message, reply_markup=get_city_buttons(user_id))
 
 # ============================================================
-# 13. ارسال خودکار
+# 14. ارسال خودکار
 # ============================================================
 def send_daily_messages(app):
     async def send():
@@ -1385,7 +1384,7 @@ def start_scheduler(app):
     print("⏰ زمان‌بند ارسال خودکار فعال شد (هر روز ساعت ۰۰:۰۰ به وقت تهران).")
 
 # ============================================================
-# 14. اجرای اصلی
+# 15. اجرای اصلی
 # ============================================================
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
@@ -1402,7 +1401,7 @@ def main():
     
     start_scheduler(app)
     
-    print("✅ ربات با تمام قابلیت‌های جدید روشن شد...")
+    print("✅ ربات با قابلیت زمان تا اذان بعدی روشن شد...")
     app.run_polling()
 
 from flask import Flask
@@ -1417,7 +1416,6 @@ def home():
 def run_flask():
     app_flask.run(host='0.0.0.0', port=8080)
 
-# اجرای Flask در یک ترد جداگانه
 threading.Thread(target=run_flask, daemon=True).start()
 
 if __name__ == "__main__":
