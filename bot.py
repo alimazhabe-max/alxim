@@ -1063,7 +1063,7 @@ def build_message(user_id, user_name, city):
         "📌 **مناسبت‌های شمسی امروز:**\n" + today_events_text + "\n\n" +
         "🔮 **مناسبت‌های شمسی فردا:**\n" + tomorrow_events_text + "\n\n" +
         TEXTS[lang]["prayer"].format(city=city) + "\n" + prayer_text +
-        (("\n" + next_prayer_text) if next_prayer_text else "") + "\n" +
+        ((next_prayer_text + "\n\n") if next_prayer_text else "") +
         TEXTS[lang]["weather"].format(city=city) + "\n" + weather_text + "\n\n" +
         TEXTS[lang]["motivation"] + "\n" + motivation + "\n\n" +
         TEXTS[lang]["change_city"]
