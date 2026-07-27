@@ -1371,7 +1371,7 @@ def send_daily_messages(app):
                 print(f"❌ خطا در ارسال به کاربر {user_id}: {e}")
         print("🏁 ارسال خودکار روزانه پایان یافت.")
     
-    asyncio.run_coroutine_threadsafe(send(), loop)
+    asyncio.run_coroutine_threadsafe(send(), app.bot.loop)  
 
 def start_scheduler(app):
     scheduler = BackgroundScheduler(timezone="Asia/Tehran")
