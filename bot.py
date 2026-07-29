@@ -293,7 +293,6 @@ def get_prayer_times(city, country="Iran"):
             "اذان عصر": timings["Asr"],
             "اذان مغرب": maghrib,
             "اذان عشاء": timings["Isha"],
-            "نیمه‌شب شرعی": midnight,
         }
     except:
         return None
